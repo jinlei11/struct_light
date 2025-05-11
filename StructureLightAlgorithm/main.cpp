@@ -22,6 +22,8 @@ int PhaseImgsNum = 4;
 //曝光次数
 int exposureNums = 6;
 
+int a = 0;
+
 //辅助图像数量
 int auxiliaryImageNum = 1;
 
