@@ -40,7 +40,7 @@ target_sources(StructureLightAlgorithm PRIVATE
                 "include/CloudPointsGeneration.h" 
                 "CloudPointsGeneration.cpp" 
                 "include/MulitExposure.h" 
-                "MulitExposure.cpp")
+                "MulitExposure.cpp" "monocularStructureLight.cpp" "include/monocularStructureLight.h" "include/ImagepreProcessing.h" "ImagepreProcessing.cpp")
 
 
 

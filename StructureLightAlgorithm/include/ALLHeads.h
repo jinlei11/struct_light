@@ -9,3 +9,4 @@
 #include "SolvingPacel.h"
 #include "StructureLightAlgorithms.h"
 #include "HDR_ImageFusion.h"
+#include "ImagepreProcessing.h"

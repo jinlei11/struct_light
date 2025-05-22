@@ -15,6 +15,10 @@ std::string RecoveryPahsePath = currentPath + "RecoveryPahse\\";
 std::string CapturePictures_Left = currentPath + "CapturePictures\\A7500CU35_DC38534AAK00017\\";
 std::string CapturePictures_Right = currentPath + "CapturePictures\\A7500MU35_DF13188AAK00019\\";
 std::string CloudPointsSavedPath = currentPath + "CloudPoints\\result.txt";
+
+
+std::string ProjectionPattern = currentPath + "ProjectionPattern\\";
+
 //格雷码图像数
 int GrayImgsNum = 7;
 //相移图像数
@@ -22,7 +26,6 @@ int PhaseImgsNum = 4;
 //曝光次数
 int exposureNums = 6;
 
-int a = 0;
 
 //辅助图像数量
 int auxiliaryImageNum = 1;
@@ -30,10 +33,9 @@ int auxiliaryImageNum = 1;
 int main() {
 
 	/********************  生成格雷码图案   *************************/
-	//std::string fielpath = R"(../../../../ProjectionPattern/DLP3010/)";
-	//GrayCodeOperation* TEST = new GrayMethod_2(6, DLP3010,0);
-	//TEST->GenerateAndSave_pics(fielpath);
-	//TEST->GeneratePatternWithValue(fielpath, 255);
+	//GrayCodeOperation* TEST = new GrayMethod_2(6, DLP4500,0);
+	///*TEST->GenerateAndSave_pics(ProjectionPattern);*/
+	//TEST->GeneratePatternWithValue(ProjectionPattern, 255);
 	/********************  生成格雷码图案   *************************/
 
 
@@ -54,6 +56,22 @@ int main() {
 	/***********************    相机标定   *********************************/
 
 
+	/***********************    图像预处理   *********************************/
+	ImageProcessor processor(CapturePictures_Right + "12.bmp");
+	if (processor.loadImage()) {
+		processor.process();
+		processor.showResult();
+		processor.saveResult(CapturePictures_Right + "processed_output.png");
+	}
+
+	/***********************    图像预处理   *********************************/
+
+
+
+
+
+
+
 	/***********************    三维重建   *********************************/
 	////单次曝光
 	//SolvingPacel Reconstruction_SingleExposure(CapturePictures_Left,
@@ -65,27 +83,27 @@ int main() {
 	//										   1);
 	 
 	 
-	bool firstExectue = false;
-	//多次曝光
-	SolvingPacel Reconstruction_MulitExposure( CapturePictures_Left,
-											   CapturePictures_Right,
-											   CalibrationResultPath,
-											   GrayImgsNum,
-											   PhaseImgsNum,
-											   A7500,
-											   exposureNums,
-											   auxiliaryImageNum,
-											   true);
-	cv::Mat CorrectionLeft = cv::Mat::zeros(2048, 2448, CV_32FC1);
-	cv::Mat CorrectionRight = cv::Mat::zeros(2048, 2448, CV_32FC1);
-	cv::Mat Q = Reconstruction_MulitExposure.BinocularPhaseRecovery(CorrectionLeft, CorrectionRight,254);
+	//bool firstExectue = false;
+	////多次曝光
+	//SolvingPacel Reconstruction_MulitExposure( CapturePictures_Left,
+	//										   CapturePictures_Right,
+	//										   CalibrationResultPath,
+	//										   GrayImgsNum,
+	//										   PhaseImgsNum,
+	//										   A7500,
+	//										   exposureNums,
+	//										   auxiliaryImageNum,
+	//										   true);
+	//cv::Mat CorrectionLeft = cv::Mat::zeros(2048, 2448, CV_32FC1);
+	//cv::Mat CorrectionRight = cv::Mat::zeros(2048, 2448, CV_32FC1);
+	//cv::Mat Q = Reconstruction_MulitExposure.BinocularPhaseRecovery(CorrectionLeft, CorrectionRight,254);
 
 
-	CloudPointsGeneration Generate3DPoints(CloudPointsSavedPath); 
-	cv::Mat Disparity = cv::Mat::zeros(2048, 2448, CV_32FC1); ;
-	Generate3DPoints.CalculateDisparity(CorrectionLeft, CorrectionRight, Disparity,1500);
-	cv::Mat DepthMap = Generate3DPoints.CalculateDepthMap(Disparity, Q, -10000, 20000, -2000, 1000);
-	Generate3DPoints.SaveCloudPointsToTxt(DepthMap, Q, CloudPointsSavedPath);
+	//CloudPointsGeneration Generate3DPoints(CloudPointsSavedPath); 
+	//cv::Mat Disparity = cv::Mat::zeros(2048, 2448, CV_32FC1); ;
+	//Generate3DPoints.CalculateDisparity(CorrectionLeft, CorrectionRight, Disparity,1500);
+	//cv::Mat DepthMap = Generate3DPoints.CalculateDepthMap(Disparity, Q, -10000, 20000, -2000, 1000);
+	//Generate3DPoints.SaveCloudPointsToTxt(DepthMap, Q, CloudPointsSavedPath);
 
 
 
