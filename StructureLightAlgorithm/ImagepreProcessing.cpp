@@ -11,11 +11,7 @@ bool ImageProcessor::loadImage() {
 }
 
 
-void ImageProcessor::process() {
-    if (image.empty()) {
-        std::cerr << "图像为空，无法处理" << std::endl;
-        return;
-    }
+std::vector<cv::Point> ImageProcessor::process() {
 
     // 转灰度
     cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
@@ -53,6 +49,7 @@ void ImageProcessor::process() {
     }
 
     // 绘制最小外接矩形
+    std::vector<cv::Point> box;
     if (!filteredContours.empty()) {
         std::vector<cv::Point> allPoints;
         for (const auto& cnt : filteredContours) {
@@ -63,12 +60,15 @@ void ImageProcessor::process() {
         cv::Point2f boxPoints[4];
         rect.points(boxPoints);
 
-        std::vector<cv::Point> box;
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 4; ++i) {
             box.push_back(boxPoints[i]);
+            std::cout << "X: " << boxPoints[i].x << "Y: " << boxPoints[i].y << std::endl;
+        }
 
         cv::polylines(image, box, true, cv::Scalar(0, 165, 255), 4); // 橙色框
     }
+
+    return box;
 }
 
 

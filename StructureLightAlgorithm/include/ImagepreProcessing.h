@@ -9,7 +9,7 @@ public:
     bool loadImage();
 
     //提取刀具ROI区域
-    void process();
+    std::vector<cv::Point> process();
 
     void showResult();
 

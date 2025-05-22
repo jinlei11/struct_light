@@ -16,6 +16,8 @@ std::string CapturePictures_Left = currentPath + "CapturePictures\\A7500CU35_DC3
 std::string CapturePictures_Right = currentPath + "CapturePictures\\A7500MU35_DF13188AAK00019\\";
 std::string CloudPointsSavedPath = currentPath + "CloudPoints\\result.txt";
 
+std::string ROIPathLeft = currentPath + "ROI\\left\\";
+std::string ROIPathRight = currentPath + "ROI\\right\\";
 
 std::string ProjectionPattern = currentPath + "ProjectionPattern\\";
 
@@ -57,13 +59,23 @@ int main() {
 
 
 	/***********************    图像预处理   *********************************/
-	ImageProcessor processor(CapturePictures_Right + "12.bmp");
+	FileManipulation test;
+	std::vector<cv::Mat> pics = test.ReadPics("C:\\mycode\\StructureLightAlgorithms\\CamResponseCurveImgs\\A7500MU35_DF13188AAK00019\\");
+
+
+	ImageProcessor processor(ROIPathLeft + "11.bmp");
 	if (processor.loadImage()) {
 		processor.process();
 		processor.showResult();
-		processor.saveResult(CapturePictures_Right + "processed_output.png");
+		processor.saveResult(ROIPathLeft + "ROI.bmp");
 	}
 
+	ImageProcessor processor_right(ROIPathRight + "12.bmp");
+	if (processor_right.loadImage()) {
+		processor_right.process();
+		processor_right.showResult();
+		processor_right.saveResult(ROIPathRight + "ROI.bmp");
+	}
 	/***********************    图像预处理   *********************************/
 
 
