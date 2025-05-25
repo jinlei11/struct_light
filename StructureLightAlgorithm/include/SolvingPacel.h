@@ -122,22 +122,39 @@ public:
 	 * @ brief  对单组投影图案进行相位解算
 	 * @ param  ProjectionPatterns   单组投影图案
 	 * @ param  Phase                解算出的解包裹相位
+	 * @ param  FringeOrder          条纹级次图
 	 * @ param  regulatory           调制度B的值
 	*/
-	void SingleDePhase(const std::vector<cv::Mat>& ProjectionPatterns, 
-					   cv::Mat& Phase,
-					   int regulatory);
+	void SingleDePhase(const std::vector<cv::Mat>& ProjectionPatterns,
+									 cv::Mat& Phase,
+									 cv::Mat& FringeOrder,
+									 int regulatory);
 
+
+
+	/*
+	 * @ brief  生成条纹级次可视化的辅助函数
+	 * @ param  ProjectionPatterns   单组投影图案
+	 * @ param  Phase                解算出的解包裹相位
+	 * @ param  regulatory           调制度B的值
+	*/
+	void GenerateFringeOrderVisualization(const cv::Mat& fringeOrder,
+														int minK, int maxK,
+														cv::Mat& FringeOrderGray,
+														cv::Mat& FringeOrderColor);
+	 
 
 	/*
 	 * @ brief  对多组投影图案进行相位解算,该函数直接调用单次解算函数，每组曝光的投影图案直接解相互不干扰
 	 * @ param  ProjectionPatterns   单组投影图案
 	 * @ param  SovelPacelPhases     解算出的解包裹相位序列
+	 * @ param  StripesLevel         条纹级次
 	 * @ param  ExposureNums         多重曝光的曝光次数
 	 * @ param  regulatory           调制度B的值
 	*/
 	void MultiDePhase(const std::vector<cv::Mat>& ProjectionPatterns, 
 					  std::vector<cv::Mat>& SovelPacelPhases, 
+					  std::vector<cv::Mat>& StripesLevel,
 					  int ExposureNums, 
 					  int regulatory);
 
@@ -178,11 +195,17 @@ public:
 	 * @ brief  双目结构光相位恢复
 	 * @ param  correction_left      极线矫正后的左相机展开相位
 	 * @ param  correction_right     极线矫正后的右相机展开相位
+	 * @ param  StripesLevel_Left    左相机条纹级次
+	 * @ param  StripesLevel_Right   右相机条纹级次
 	 * @ param  GrayThreshold        灰度阈值
 	 * @ param  isSaved              是否保存极线校正后的图像
 	 * @ return  双目标定的Q矩阵
 	*/
-	cv::Mat BinocularPhaseRecovery(cv::Mat& correction_left, cv::Mat& correction_right, int GrayThreshold, bool isSaved = false);
+	cv::Mat BinocularPhaseRecovery(cv::Mat& correction_left, 
+								   cv::Mat& correction_right, 
+								   std::vector<cv::Mat>& StripesLevel_Left,
+								   std::vector<cv::Mat>& StripesLevel_Right,
+								   int GrayThreshold, bool isSaved = false);
 
 
 	/*

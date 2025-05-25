@@ -12,28 +12,33 @@ cv::Mat CloudPointsGeneration::CalculateDisparity(cv::Mat& UnwrappedLeft,
 												  cv::Mat& disparity,
 												  int maxDisparity) {
 	disparity = cv::Mat::zeros(UnwrappedLeft.size(), CV_32FC1);
+	// 添加输入验证
+	if (UnwrappedLeft.empty() || UnwrappedRight.empty()) {
+		std::cerr << "Error: Input images are empty!" << std::endl;
+		return disparity;
+	}
+	if (UnwrappedLeft.size() != UnwrappedRight.size()) {
+		std::cerr << "Error: Left and right images have different sizes!" << std::endl;
+		return disparity;
+	}
+
+	const float PHASE_DIFF_THRESHOLD = 0.5f;  // 相位差阈值
+	const float EPSILON = 1e-6f;  // 用于浮点数比较的小值
 
 	for (int row = 0; row < UnwrappedLeft.rows; row++) {
-		float* leftRowPtr = UnwrappedLeft.ptr<float>(row);
-		float* rightRowPtr = UnwrappedRight.ptr<float>(row);
+		const float* leftRowPtr = UnwrappedLeft.ptr<float>(row);
+		const float* rightRowPtr = UnwrappedRight.ptr<float>(row);
+		float* disparityRowPtr = disparity.ptr<float>(row);
 
 		for (int col = 0; col < UnwrappedLeft.cols; col++) {
 			float leftValue = leftRowPtr[col];
-			float rightValue = rightRowPtr[col];
-			//这一步有一些问题，这样回导致一些么问题的视野被滤除掉
-			//if (leftValue == 0 || rightValue == 0) {
-			//	// Remove background
-			//	disparity.ptr<float>(row)[col] = 0.0;
-			//	continue;
-			//}
-
-			if (leftValue == 0 && rightValue == 0) {
-				// Remove background
-				disparity.ptr<float>(row)[col] = 0.0;
+			const float epsilon = EPSILON;//阈值为一个很小的数，但不能直接判断等于零
+			if (std::abs(leftValue) < epsilon) {
+				disparity.ptr<float>(row)[col] = 0.0f;
 				continue;
 			}
 
-			int flag = col; // Initialize flag with the current column
+			int bestMatchCol = col; // Initialize flag with the current column
 			float minDiff = std::numeric_limits<float>::max();
 
 			// Define the search range based on maxDisparity
@@ -42,25 +47,65 @@ cv::Mat CloudPointsGeneration::CalculateDisparity(cv::Mat& UnwrappedLeft,
 
 			for (int j = minSearchCol; j <= maxSearchCol; j++) {
 				float diff = std::abs(leftValue - rightRowPtr[j]);
-
 				if (diff < minDiff) {
 					minDiff = diff;
-					flag = j;
+					bestMatchCol = j;
 				}
 			}
-			//Control parallax values not to be too large
-			if (minDiff > 0.5) {
+			//基于抛物线拟合-------------------------------------------------------
+			if (minDiff > PHASE_DIFF_THRESHOLD) {
 				disparity.ptr<float>(row)[col] = 0;
+				continue;
 			}
-			else if (flag == col || flag == 0) { // Check if flag is at the border
-				disparity.ptr<float>(row)[col] = static_cast<float>(col - flag);
+			// 亚像素精度插值计算
+			float subPixelDisparity;
+			if (bestMatchCol == col || bestMatchCol == 0.f) {
+				// 边界情况，直接使用整数视差
+				subPixelDisparity = static_cast<float>(col - bestMatchCol);
 			}
 			else {
-				// Ensure flag-1 is within the valid range
-				float rightValuePrev = (flag > 0) ? rightRowPtr[flag - 1] : rightRowPtr[flag];
-				double k = (leftValue - rightValuePrev) / (rightRowPtr[flag] - rightValuePrev);
-				disparity.ptr<float>(row)[col] = static_cast<float>(col - (flag - 1 + k));
+				// 亚像素插值 - 使用抛物线拟合
+				float prevDiff = std::abs(leftValue - rightRowPtr[bestMatchCol - 1]);
+				float currDiff = minDiff;
+				float nextDiff = std::abs(leftValue - rightRowPtr[bestMatchCol + 1]);
+
+				// 抛物线拟合求亚像素位置
+				float denom = 2.0f * (prevDiff - 2.0f * currDiff + nextDiff);
+				if (std::abs(denom) > EPSILON) {
+					float delta = (prevDiff - nextDiff) / denom;
+					// 限制delta在合理范围内
+					delta = std::max(-1.0f, std::min(1.0f, delta));
+					subPixelDisparity = static_cast<float>(col - bestMatchCol) - delta;
+				}
+				else {
+					subPixelDisparity = static_cast<float>(col - bestMatchCol);
+				}
 			}
+			// 视差合理性检查
+			if (subPixelDisparity >= maxDisparity) {
+				disparityRowPtr[col] = 0.0f;
+			}
+			else {
+				disparityRowPtr[col] = subPixelDisparity;
+			}
+
+
+
+			//基于线性拟合----------------------------------------------
+			////控制视差值不要过大
+			//if (minDiff > 0.5) {
+			//	disparity.ptr<float>(row)[col] = 0;
+			//	continue;
+			//}
+			//else if (bestMatchCol == col || bestMatchCol == 0) { // Check if flag is at the border
+			//	disparity.ptr<float>(row)[col] = static_cast<float>(col - bestMatchCol);
+			//}
+			//else {
+			//	// Ensure flag-1 is within the valid range
+			//	float rightValuePrev = (bestMatchCol > 0) ? rightRowPtr[bestMatchCol - 1] : rightRowPtr[bestMatchCol];
+			//	double k = (leftValue - rightValuePrev) / (rightRowPtr[bestMatchCol] - rightValuePrev);
+			//	disparity.ptr<float>(row)[col] = static_cast<float>(col - (bestMatchCol - 1 + k));
+			//}
 		}
 	}
 	return disparity;

@@ -10,3 +10,4 @@
 #include "StructureLightAlgorithms.h"
 #include "HDR_ImageFusion.h"
 #include "ImagepreProcessing.h"
+#include "ImageReprocess.h"
