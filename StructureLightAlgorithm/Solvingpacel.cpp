@@ -218,237 +218,264 @@ SolvingPacel::SolvingPacel(const std::string& ImagepathLeft,
 
 
 
+//初始版本 - 添加调制度存储，太长
+//void SolvingPacel::SingleDePhase(const std::vector<cv::Mat>& ProjectionPatterns,
+//								 cv::Mat& Phase,
+//								 cv::Mat& FringeOrder,
+//								 int regulatory = 5) {
+//	// 使用OpenCV中的宏进行运行时检查
+//	CV_Assert(ProjectionPatterns.size() >= static_cast<size_t>(M_GrayImgsNum + M_PhaseImgsNum));
+//	CV_Assert(!ProjectionPatterns.empty() && !ProjectionPatterns[0].empty());
+//
+//	// 预分配内存，避免重复分配
+//	cv::Mat wrappedPhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);//包裹相位
+//	cv::Mat absolutePhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);//绝对相位
+//	cv::Mat averageIntensity = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);//背景强度
+//	cv::Mat modulation = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);    // 新增：调制度矩阵
+//	cv::Mat fringeOrder = cv::Mat::zeros(M_Height, M_Width, CV_32SC1);  // 存储条纹级次K
+//
+//	// 每次相移的值：根据 M_PhaseImgsNum判断是几步相移
+//	const float shiftVal = static_cast<float>(CV_2PI) / M_PhaseImgsNum;
+//	const float invPhaseImgsNum = 1.0f / M_PhaseImgsNum;//相移步数的倒数
+//	const float regulatoryThreshold = static_cast<float>(regulatory);
+//
+//	// 预计算三角函数值，避免重复计算
+//	std::vector<float> sinVals(M_PhaseImgsNum), cosVals(M_PhaseImgsNum);
+//	for (int k = 0; k < M_PhaseImgsNum; ++k) {
+//		const float angle = k * shiftVal;
+//		sinVals[k] = sin(angle);
+//		cosVals[k] = cos(angle);
+//	}
+//
+//	// 第一步：计算包裹相位、平均强度和调制度
+//	cv::parallel_for_(cv::Range(0, M_Height), [&](const cv::Range& range) {
+//		// 预分配指针数组，避免在内层循环中重复分配
+//		std::vector<const float*> phaseImgPtrs(M_PhaseImgsNum);
+//
+//		for (int i = range.start; i < range.end; ++i) {
+//			// 获取所有相移图像的行指针
+//			for (int k = 0; k < M_PhaseImgsNum; ++k) {
+//				phaseImgPtrs[k] = ProjectionPatterns[M_GrayImgsNum + k].ptr<float>(i);
+//			}
+//
+//			float* wrappedPhasePtr = wrappedPhase.ptr<float>(i);
+//			float* avgIntensityPtr = averageIntensity.ptr<float>(i);
+//			float* modulationPtr = modulation.ptr<float>(i);  // 新增：调制度指针
+//
+//			// 列遍历
+//			for (int j = 0; j < M_Width; ++j) {
+//				float numerator = 0.0f, denominator = 0.0f, sumIntensity = 0.0f;
+//
+//				// 同时计算相位和平均强度
+//				for (int k = 0; k < M_PhaseImgsNum; ++k) {
+//					const float intensity = phaseImgPtrs[k][j];
+//					numerator += intensity * sinVals[k];
+//					denominator += intensity * cosVals[k];
+//					sumIntensity += intensity;
+//				}
+//
+//				// 计算调制度并存储
+//				const float modulationValue = sqrt(numerator * numerator + denominator * denominator) * 2 * invPhaseImgsNum;
+//				modulationPtr[j] = modulationValue;  // 存储调制度值
+//				avgIntensityPtr[j] = sumIntensity * invPhaseImgsNum;
+//
+//				// 判断是否有效并计算相位
+//				if (modulationValue > regulatoryThreshold) {
+//					wrappedPhasePtr[j] = -atan2(numerator, denominator);
+//				}
+//				else {
+//					wrappedPhasePtr[j] = NAN;
+//				}
+//			}
+//		}
+//		});
+//
+//	// 第二步：相位解包裹并记录条纹级次
+//	int minK = INT_MAX, maxK = INT_MIN;
+//	std::mutex minMaxMutex;  // 用于线程安全更新最值
+//
+//	cv::parallel_for_(cv::Range(0, M_Height), [&](const cv::Range& range) {
+//		// 预分配格雷码图像指针数组
+//		std::vector<const float*> grayImgPtrs(M_GrayImgsNum);
+//		int localMinK = INT_MAX, localMaxK = INT_MIN;
+//
+//		for (int i = range.start; i < range.end; ++i) {
+//			// 获取所有格雷码图像的行指针
+//			for (int j = 0; j < M_GrayImgsNum; ++j) {
+//				grayImgPtrs[j] = ProjectionPatterns[j].ptr<float>(i);
+//			}
+//
+//			float* absolutePhasePtr = absolutePhase.ptr<float>(i);
+//			int* fringeOrderPtr = fringeOrder.ptr<int>(i);
+//			const float* avgIntensityPtr = averageIntensity.ptr<float>(i);
+//			const float* wrappedPhasePtr = wrappedPhase.ptr<float>(i);
+//
+//			for (int j = 0; j < M_Width; ++j) {
+//				// 跳过无效像素
+//				if (std::isnan(wrappedPhasePtr[j])) {
+//					absolutePhasePtr[j] = NAN;
+//					fringeOrderPtr[j] = -1;  // 无效像素标记为-1
+//					continue;
+//				}
+//
+//				int K1 = 0, tempVal = 0;
+//				const float threshold = avgIntensityPtr[j];
+//
+//				// 解码格雷码获取K1，初始值为零，因为与零异或保持不变
+//				for (int k = 0; k < M_GrayImgsNum - 1; ++k) {
+//					tempVal ^= (grayImgPtrs[k][j] > threshold) ? 1 : 0;
+//					K1 = (K1 << 1) + tempVal;
+//				}
+//
+//				// 处理互补格雷码获取K2
+//				tempVal ^= (grayImgPtrs[M_GrayImgsNum - 1][j] > threshold) ? 1 : 0;
+//				const int K2 = ((K1 << 1) + tempVal + 1) >> 1; // 使用位移代替除法
+//
+//				// 相位展开并记录使用的K值
+//				const float wrappedVal = wrappedPhasePtr[j];
+//				int finalK;
+//				if (wrappedVal <= CV_PI * 0.5f) {
+//					absolutePhasePtr[j] = wrappedVal + CV_2PI * K2;
+//					finalK = K2;
+//				}
+//				else if (wrappedVal >= CV_PI * 1.5f) {
+//					absolutePhasePtr[j] = wrappedVal + CV_2PI * (K2 - 1);
+//					finalK = K2 - 1;
+//				}
+//				else {
+//					absolutePhasePtr[j] = wrappedVal + CV_2PI * K1;
+//					finalK = K1;
+//				}
+//
+//				fringeOrderPtr[j] = finalK;
+//				localMinK = std::min(localMinK, finalK);
+//				localMaxK = std::max(localMaxK, finalK);
+//			}
+//		}
+//		// 线程安全地更新全局最值
+//		std::lock_guard<std::mutex> lock(minMaxMutex);
+//		if (localMinK != INT_MAX) minK = std::min(minK, localMinK);
+//		if (localMaxK != INT_MIN) maxK = std::max(maxK, localMaxK);
+//		});
+//
+//	//条纹级次
+//	FringeOrder = std::move(fringeOrder);
+//	//输出绝对相位
+//	Phase = std::move(absolutePhase);
+//
+//	//检测相位误差
+//	cv::Mat phaseError = PhaseErrorAnalyzer::calculateTheoreticalPhaseError(modulation, averageIntensity, 1.0f);
+//	// 根据相位误差进行质量分级
+//	cv::Mat qualityMask = cv::Mat::zeros(M_Height, M_Width, CV_8UC1);
+//	cv::parallel_for_(cv::Range(0, M_Height), [&](const cv::Range& range) {
+//		for (int i = range.start; i < range.end; ++i) {
+//			const float* errorPtr = phaseError.ptr<float>(i);
+//			uchar* qualityPtr = qualityMask.ptr<uchar>(i);
+//
+//			for (int j = 0; j < M_Width; ++j) {
+//				if (errorPtr[j] < 0.1) {
+//					qualityPtr[j] = 255; // 高质量
+//				}
+//				else if (errorPtr[j] < 0.5) {
+//					qualityPtr[j] = 128; // 中等质量
+//				}
+//				else {
+//					qualityPtr[j] = 0;   // 低质量
+//				}
+//			}
+//		}
+//	});
+//}
 
 
-//改进版本
+
+// 性能优化版本：减少函数调用，保持数据局部性
 void SolvingPacel::SingleDePhase(const std::vector<cv::Mat>& ProjectionPatterns,
-								 cv::Mat& Phase,
-								 cv::Mat& FringeOrder,
+								 cv::Mat& Phase, 
+								 cv::Mat& FringeOrder, 
 								 int regulatory = 5) {
-	// 使用OpenCV中的宏进行运行时检查
+	// 输入验证
 	CV_Assert(ProjectionPatterns.size() >= static_cast<size_t>(M_GrayImgsNum + M_PhaseImgsNum));
 	CV_Assert(!ProjectionPatterns.empty() && !ProjectionPatterns[0].empty());
 
-	// 预分配内存，避免重复分配
-	cv::Mat wrappedPhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);//包裹相位
-	cv::Mat absolutePhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);//绝对相位
-	cv::Mat averageIntensity = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);//背景强度
-	cv::Mat fringeOrder = cv::Mat::zeros(M_Height, M_Width, CV_32SC1);  // 存储条纹级次K
+	// 初始化矩阵
+	cv::Mat wrappedPhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);
+	cv::Mat absolutePhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);
+	cv::Mat averageIntensity = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);
+	cv::Mat modulation = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);
+	cv::Mat fringeOrder = cv::Mat::zeros(M_Height, M_Width, CV_32SC1);
 
-	// 每次相移的值：根据 M_PhaseImgsNum判断是几步相移
-	const float shiftVal = static_cast<float>(CV_2PI) / M_PhaseImgsNum;
-	const float invPhaseImgsNum = 1.0f / M_PhaseImgsNum;//相移步数的倒数
 	const float regulatoryThreshold = static_cast<float>(regulatory);
+	const TrigValues trig(M_PhaseImgsNum);
 
-	// 预计算三角函数值，避免重复计算
-	std::vector<float> sinVals(M_PhaseImgsNum), cosVals(M_PhaseImgsNum);
-	for (int k = 0; k < M_PhaseImgsNum; ++k) {
-		const float angle = k * shiftVal;
-		sinVals[k] = sin(angle);
-		cosVals[k] = cos(angle);
-	}
-
-	// 第一步：计算包裹相位和平均强度
+	// 合并两个主要步骤到一个并行循环中，保持数据局部性
 	cv::parallel_for_(cv::Range(0, M_Height), [&](const cv::Range& range) {
-		// 预分配指针数组，避免在内层循环中重复分配
+		// 预分配指针数组
 		std::vector<const float*> phaseImgPtrs(M_PhaseImgsNum);
+		std::vector<const float*> grayImgPtrs(M_GrayImgsNum);
 
 		for (int i = range.start; i < range.end; ++i) {
-			// 获取所有相移图像的行指针
+			// 获取所有图像的行指针
 			for (int k = 0; k < M_PhaseImgsNum; ++k) {
 				phaseImgPtrs[k] = ProjectionPatterns[M_GrayImgsNum + k].ptr<float>(i);
 			}
-
-			float* wrappedPhasePtr = wrappedPhase.ptr<float>(i);
-			float* avgIntensityPtr = averageIntensity.ptr<float>(i);
-
-			// 列遍历
-			for (int j = 0; j < M_Width; ++j) {
-				float numerator = 0.0f, denominator = 0.0f, sumIntensity = 0.0f;
-
-				// 同时计算相位和平均强度
-				for (int k = 0; k < M_PhaseImgsNum; ++k) {
-					const float intensity = phaseImgPtrs[k][j];
-					numerator += intensity * sinVals[k];
-					denominator += intensity * cosVals[k];
-					sumIntensity += intensity;
-				}
-
-				// 计算调制度并判断是否有效
-				const float modulation = sqrt(numerator * numerator + denominator * denominator) * 2 * invPhaseImgsNum;
-				avgIntensityPtr[j] = sumIntensity * invPhaseImgsNum;
-
-				if (modulation > regulatoryThreshold) {
-					wrappedPhasePtr[j] = -atan2(numerator, denominator);
-				}
-				else {
-					wrappedPhasePtr[j] = NAN;
-				}
-			}
-		}
-		});
-
-	// 第二步：相位解包裹并记录条纹级次
-	int minK = INT_MAX, maxK = INT_MIN;
-	std::mutex minMaxMutex;  // 用于线程安全更新最值
-
-	cv::parallel_for_(cv::Range(0, M_Height), [&](const cv::Range& range) {
-		// 预分配格雷码图像指针数组
-		std::vector<const float*> grayImgPtrs(M_GrayImgsNum);
-		int localMinK = INT_MAX, localMaxK = INT_MIN;
-
-		for (int i = range.start; i < range.end; ++i) {
-			// 获取所有格雷码图像的行指针
 			for (int j = 0; j < M_GrayImgsNum; ++j) {
 				grayImgPtrs[j] = ProjectionPatterns[j].ptr<float>(i);
 			}
 
-			float* absolutePhasePtr = absolutePhase.ptr<float>(i);
+			// 获取输出矩阵指针
+			float* wrappedPtr = wrappedPhase.ptr<float>(i);
+			float* absPhasePtr = absolutePhase.ptr<float>(i);
+			float* avgPtr = averageIntensity.ptr<float>(i);
+			float* modPtr = modulation.ptr<float>(i);
 			int* fringeOrderPtr = fringeOrder.ptr<int>(i);
-			const float* avgIntensityPtr = averageIntensity.ptr<float>(i);
-			const float* wrappedPhasePtr = wrappedPhase.ptr<float>(i);
 
 			for (int j = 0; j < M_Width; ++j) {
-				// 跳过无效像素
-				if (std::isnan(wrappedPhasePtr[j])) {
-					absolutePhasePtr[j] = NAN;
-					fringeOrderPtr[j] = -1;  // 无效像素标记为-1
-					continue;
+				// 步骤1：计算包裹相位、调制度和平均强度（内联处理）
+				float numerator = 0.0f, denominator = 0.0f, sumIntensity = 0.0f;
+				for (int k = 0; k < M_PhaseImgsNum; ++k) {
+					const float intensity = phaseImgPtrs[k][j];
+					numerator += intensity * trig.sinVals[k];
+					denominator += intensity * trig.cosVals[k];
+					sumIntensity += intensity;
 				}
 
-				int K1 = 0, tempVal = 0;
-				const float threshold = avgIntensityPtr[j];
+				const float modulationValue = sqrt(numerator * numerator + denominator * denominator) * 2 * trig.invPhaseImgsNum;
+				modPtr[j] = modulationValue;
+				avgPtr[j] = sumIntensity * trig.invPhaseImgsNum;
 
-				// 解码格雷码获取K1，初始值为零，因为与零异或保持不变
-				for (int k = 0; k < M_GrayImgsNum - 1; ++k) {
-					tempVal ^= (grayImgPtrs[k][j] > threshold) ? 1 : 0;
-					K1 = (K1 << 1) + tempVal;
-				}
+				if (modulationValue > regulatoryThreshold) {
+					wrappedPtr[j] = -atan2(numerator, denominator);
 
-				// 处理互补格雷码获取K2
-				tempVal ^= (grayImgPtrs[M_GrayImgsNum - 1][j] > threshold) ? 1 : 0;
-				const int K2 = ((K1 << 1) + tempVal + 1) >> 1; // 使用位移代替除法
+					// 步骤2：相位展开（内联处理）
+					const float threshold = avgPtr[j];
+					auto [K1, K2] = decodeGrayCodeInline(grayImgPtrs, j, threshold);
 
-				// 相位展开并记录使用的K值
-				const float wrappedVal = wrappedPhasePtr[j];
-				int finalK;
-				if (wrappedVal <= CV_PI * 0.5f) {
-					absolutePhasePtr[j] = wrappedVal + CV_2PI * K2;
-					finalK = K2;
-				}
-				else if (wrappedVal >= CV_PI * 1.5f) {
-					absolutePhasePtr[j] = wrappedVal + CV_2PI * (K2 - 1);
-					finalK = K2 - 1;
+					auto [unwrappedPhase, finalK] = unwrapPhaseInline(wrappedPtr[j], K1, K2);
+					absPhasePtr[j] = unwrappedPhase;
+					fringeOrderPtr[j] = finalK;
 				}
 				else {
-					absolutePhasePtr[j] = wrappedVal + CV_2PI * K1;
-					finalK = K1;
+					wrappedPtr[j] = NAN;
+					absPhasePtr[j] = NAN;
+					fringeOrderPtr[j] = -1;
 				}
-
-				fringeOrderPtr[j] = finalK;
-				localMinK = std::min(localMinK, finalK);
-				localMaxK = std::max(localMaxK, finalK);
 			}
 		}
-
-		// 线程安全地更新全局最值
-		std::lock_guard<std::mutex> lock(minMaxMutex);
-		if (localMinK != INT_MAX) minK = std::min(minK, localMinK);
-		if (localMaxK != INT_MIN) maxK = std::max(maxK, localMaxK);
 		});
 
-	//条纹级次
-	FringeOrder = std::move(fringeOrder);
-	// 输出绝对相位
+	// 输出结果
 	Phase = std::move(absolutePhase);
+	FringeOrder = std::move(fringeOrder);
 
-	//// 生成条纹级次可视化图像（如果需要）
-	//if (!FringeOrderGray.empty() || !FringeOrderColor.empty()) {
-	//	GenerateFringeOrderVisualization(fringeOrder, minK, maxK, FringeOrderGray, FringeOrderColor);
-	//}
+	std::vector<cv::Mat> Phases(ProjectionPatterns.begin() + M_GrayImgsNum - 1, ProjectionPatterns.end() - M_AncillaryPatternNum);
+	std::cout << Phases.size() << std::endl;
+	cv::Mat PhaseError = PhaseErrorAnalyzer::calculateComprehensivePhaseError(Phases,
+																			  wrappedPhase,
+																			  modulation,
+																			  averageIntensity,
+																			  M_PhaseImgsNum);
 }
-
-
-// 生成条纹级次可视化的辅助函数
-void SolvingPacel::GenerateFringeOrderVisualization(const cv::Mat& fringeOrder,
-													int minK, int maxK,
-													cv::Mat& FringeOrderGray,
-													cv::Mat& FringeOrderColor) {
-	const int height = fringeOrder.rows;
-	const int width = fringeOrder.cols;
-
-	// 生成灰度级次图
-	if (!FringeOrderGray.empty()) {
-		FringeOrderGray = cv::Mat::zeros(height, width, CV_8UC1);
-		const float scale = (maxK > minK) ? (255.0f / (maxK - minK)) : 1.0f;
-
-		for (int i = 0; i < height; ++i) {
-			const int* fringeOrderPtr = fringeOrder.ptr<int>(i);
-			uchar* grayPtr = FringeOrderGray.ptr<uchar>(i);
-
-			for (int j = 0; j < width; ++j) {
-				if (fringeOrderPtr[j] == -1) {
-					grayPtr[j] = 0;  // 无效像素设为黑色
-				}
-				else {
-					grayPtr[j] = static_cast<uchar>((fringeOrderPtr[j] - minK) * scale);
-				}
-			}
-		}
-	}
-
-	// 生成彩色级次图
-	if (!FringeOrderColor.empty()) {
-		cv::Mat tempGray;
-		if (FringeOrderGray.empty()) {
-			// 如果没有生成灰度图，临时创建一个
-			tempGray = cv::Mat::zeros(height, width, CV_8UC1);
-			const float scale = (maxK > minK) ? (255.0f / (maxK - minK)) : 1.0f;
-
-			for (int i = 0; i < height; ++i) {
-				const int* fringeOrderPtr = fringeOrder.ptr<int>(i);
-				uchar* grayPtr = tempGray.ptr<uchar>(i);
-
-				for (int j = 0; j < width; ++j) {
-					if (fringeOrderPtr[j] == -1) {
-						grayPtr[j] = 0;
-					}
-					else {
-						grayPtr[j] = static_cast<uchar>((fringeOrderPtr[j] - minK) * scale);
-					}
-				}
-			}
-		}
-		else {
-			tempGray = FringeOrderGray;
-		}
-
-		// 应用JET色彩映射
-		cv::applyColorMap(tempGray, FringeOrderColor, cv::COLORMAP_JET);
-
-		// 将无效像素设为黑色
-		for (int i = 0; i < height; ++i) {
-			const int* fringeOrderPtr = fringeOrder.ptr<int>(i);
-			cv::Vec3b* colorPtr = FringeOrderColor.ptr<cv::Vec3b>(i);
-
-			for (int j = 0; j < width; ++j) {
-				if (fringeOrderPtr[j] == -1) {
-					colorPtr[j] = cv::Vec3b(0, 0, 0);  // 黑色
-				}
-			}
-		}
-	}
-
-	// 输出统计信息
-	std::cout << "[条纹级次统计] 最小级次: " << minK
-		<< ", 最大级次: " << maxK
-		<< ", 级次范围: " << (maxK - minK + 1) << std::endl;
-}
-
-
-
-
-
 
 
 

@@ -55,3 +55,34 @@ cv::Mat PhaseNoiseFilter::filter(const cv::Mat& phaseMap) {
     phaseMap.copyTo(result, cleanMask);
     return result;
 }
+
+
+
+
+void PhaseNoiseFilter::filterPhaseByGradient(const cv::Mat& phaseMap,
+                                             float gradThreshold,
+                                             cv::Mat& mask,
+                                             cv::Mat& filteredPhaseMap){
+    CV_Assert(phaseMap.type() == CV_32FC1);
+
+    cv::Mat gradX, gradY, gradMag;
+
+    // 计算 x 和 y 方向的梯度
+    cv::Sobel(phaseMap, gradX, CV_32F, 1, 0, 3);
+    cv::Sobel(phaseMap, gradY, CV_32F, 0, 1, 3);
+
+    // 梯度幅值
+    cv::magnitude(gradX, gradY, gradMag);
+
+    // 阈值筛选
+    cv::threshold(gradMag, mask, gradThreshold, 255.0, cv::THRESH_BINARY_INV);
+    mask.convertTo(mask, CV_8UC1);
+
+    // 可选：形态学操作
+    cv::morphologyEx(mask, mask, cv::MORPH_OPEN, cv::Mat(), cv::Point(-1, -1), 1);
+    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, cv::Mat(), cv::Point(-1, -1), 1);
+
+    // 应用掩膜
+    filteredPhaseMap = cv::Mat::zeros(phaseMap.size(), phaseMap.type());
+    phaseMap.copyTo(filteredPhaseMap, mask);
+}

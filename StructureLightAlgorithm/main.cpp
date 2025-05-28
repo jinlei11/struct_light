@@ -49,7 +49,7 @@ int main() {
 
 
 	/***********************    相机标定   *********************************/
-	//CameraCalibration calibration(Plate_smallCircle, 
+	//CameraCalibration calibration(Plate_doubleCircle,
 	//								Calibration_LeftCamImgsPath, 
 	//								Calibration_RightCamImgsPath, 
 	//								CalibrationResultPath, 
@@ -78,17 +78,7 @@ int main() {
 
 
 
-	/***********************    三维重建   *********************************/
-	////单次曝光
-	//SolvingPacel Reconstruction_SingleExposure(CapturePictures_Left,
-	//										   CapturePictures_Right, 
-	//										   CalibrationResultPath,
-	//										   GrayImgsNum,
-	//										   PhaseImgsNum,
-	//										   A7500,
-	//										   1);
-	 
-	 
+	/***********************    三维重建   *********************************/	 
 	bool firstExectue = false;
 	//多次曝光
 	SolvingPacel Reconstruction_MulitExposure( CapturePictures_Left,
@@ -107,16 +97,22 @@ int main() {
 	cv::Mat Q = Reconstruction_MulitExposure.BinocularPhaseRecovery(CorrectionLeft, CorrectionRight,
 																	StripesLevel_Left, StripesLevel_Right,
 																	254);
-
 	//图像滤波
 	PhaseNoiseFilter Filter;
+	cv::Mat mask_left, mask_right;
+	cv::Mat FilterCorrectionLeft, FilterCorrectionRight;
+	//基于相位梯度滤波
+	Filter.filterPhaseByGradient(CorrectionLeft, 3.f, mask_left, FilterCorrectionLeft);
+	Filter.filterPhaseByGradient(CorrectionRight, 3.f, mask_left, FilterCorrectionRight);
+	//连通域滤波
 	Filter.filterInPlace(CorrectionLeft);
 	Filter.filterInPlace(CorrectionRight);
+
 
 	//点云计算
 	CloudPointsGeneration Generate3DPoints(CloudPointsSavedPath); 
 	cv::Mat Disparity = cv::Mat::zeros(2048, 2448, CV_32FC1); ;
-	Generate3DPoints.CalculateDisparity(CorrectionLeft, CorrectionRight, Disparity,1500);
+	Generate3DPoints.CalculateDisparity(FilterCorrectionLeft, FilterCorrectionRight, Disparity,1500);
 	cv::Mat DepthMap = Generate3DPoints.CalculateDepthMap(Disparity, Q, -10000, 20000, -2000, 1000);
 	Generate3DPoints.SaveCloudPointsToTxt(DepthMap, Q, CloudPointsSavedPath);
 

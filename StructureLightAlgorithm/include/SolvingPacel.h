@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <functional>
 #include "FileManipulation.h"
+#include "PhaseErrorAnalyze.h"
 
 
 #define pi CV_PI
@@ -116,8 +117,6 @@ public:
 				 bool isRename);
 
 
-
-
 	/*
 	 * @ brief  对单组投影图案进行相位解算
 	 * @ param  ProjectionPatterns   单组投影图案
@@ -129,19 +128,6 @@ public:
 									 cv::Mat& Phase,
 									 cv::Mat& FringeOrder,
 									 int regulatory);
-
-
-
-	/*
-	 * @ brief  生成条纹级次可视化的辅助函数
-	 * @ param  ProjectionPatterns   单组投影图案
-	 * @ param  Phase                解算出的解包裹相位
-	 * @ param  regulatory           调制度B的值
-	*/
-	void GenerateFringeOrderVisualization(const cv::Mat& fringeOrder,
-														int minK, int maxK,
-														cv::Mat& FringeOrderGray,
-														cv::Mat& FringeOrderColor);
 	 
 
 	/*
@@ -237,71 +223,88 @@ public:
 									 int width,
 									 int height);
 
-	//Calculation of binarised Gray code image using the mean of the phase-shifted image
-	std::vector<cv::Mat> binaryzation(const std::string& path);
-
-	//Another version of binarization 
-	//requires passing the number of gray code images and the number of phase-shifted images.
-	std::vector<cv::Mat> binaryzation(int NumOfGray,int NumOfPhase);
-
-	//Generate and save binarized images
-	std::vector<cv::Mat> binaryzation(int NumOfGray,
-									  int NumOfPhase,
-									  const std::string& path);
-
-
-	//Here are some functions for solving the phase of a parcel
-	//Obtain the K1 and K2 matrices
-	void get_K1_K2();
-
-	//Implementation of decoding Gray Code
-	std::string jiema(const std::string& gray);
-
-	//Implement binary to decimal conversion
-	int twoToten(std::string gray);
-	int BinaryToDecimal(const std::string& gray);
-
-	//Calculate parcel phase
-	cv::Mat Get_wrappedphase();
-	cv::Mat Get_wrappedphase1();
-
-	//Solve the parcel phase
-	cv::Mat getunwrapped(cv::Mat& wrapped_pha);
-	cv::Mat getunwrapped();
-
-
-	////解算A
-	//inline cv::Mat calculateConfidenceMap() {
-	//	cv::Mat confidenceMap(M_Width, M_Width, CV_32FC1, cv::Scalar(0.f));
-	//	cv::Mat temp;
-	//	for (auto& img : M_Phase) {
-	//		img.convertTo(temp, CV_32FC1);
-	//		confidenceMap += temp / 4.f;
-	//	}
-
-	//	return confidenceMap;
-	//}
-
-	//Remove background based on confidence level B
-	cv::Mat RemoveBackground(cv::Mat Unwrapped, cv::Mat confidence);
-	cv::Mat RemoveBackground();
-
-
-
-
-	//Convert image file names in a folder to order from 0
-	void renameImagesInFolder(const std::string& folderPath);
-
-	//Make sure to read the image files in numerical order
-	bool numericStringCompare(const std::string& s1, const std::string& s2);
-
-
-
 
 	//将float类型转变为double类型了说
 	cv::Mat Get_wrappedphase_double();
 	cv::Mat getunwtapped_double();
 	cv::Mat RemoveBackground_double();
+
+
+private:
+	/*
+	 * @ brief  以下函数用于相位展开计算
+	 * @ struct    TrigValues                         预计算三角函数值的结构体
+	 * @ function  generateQualityMask                生成质量掩码
+	 * @ function  decodeGrayCodeInline               解码格雷码获取条纹级次
+	 * @ function  unwrapPhaseInline                  相位展开
+	*/
+
+	// 预计算三角函数值的结构体
+	struct TrigValues {
+		std::vector<float> sinVals, cosVals;
+		float shiftVal, invPhaseImgsNum;
+
+		TrigValues(int phaseImgsNum) {
+			shiftVal = static_cast<float>(CV_2PI) / phaseImgsNum;
+			invPhaseImgsNum = 1.0f / phaseImgsNum;
+			sinVals.resize(phaseImgsNum);
+			cosVals.resize(phaseImgsNum);
+
+			for (int k = 0; k < phaseImgsNum; ++k) {
+				const float angle = k * shiftVal;
+				sinVals[k] = sin(angle);
+				cosVals[k] = cos(angle);
+			}
+		}
+	};
+
+	// 生成质量掩码
+	cv::Mat generateQualityMask(const cv::Mat& modulation, const cv::Mat& averageIntensity) {
+		cv::Mat phaseError = PhaseErrorAnalyzer::calculateTheoreticalPhaseError(modulation, averageIntensity, 1.0f);
+		cv::Mat qualityMask = cv::Mat::zeros(M_Height, M_Width, CV_8UC1);
+
+		cv::parallel_for_(cv::Range(0, M_Height), [&](const cv::Range& range) {
+			for (int i = range.start; i < range.end; ++i) {
+				const float* errorPtr = phaseError.ptr<float>(i);
+				uchar* qualityPtr = qualityMask.ptr<uchar>(i);
+
+				for (int j = 0; j < M_Width; ++j) {
+					qualityPtr[j] = (errorPtr[j] < 0.1) ? 255 :
+						(errorPtr[j] < 0.5) ? 128 : 0;
+				}
+			}
+			});
+
+		return qualityMask;
+	}
+
+	// 内联辅助函数，减少函数调用开销
+	inline std::pair<int, int> decodeGrayCodeInline(const std::vector<const float*>& grayImgPtrs, 
+													int j,
+													float threshold) {
+		int K1 = 0, tempVal = 0;
+		// 解码格雷码获取K1，初始值为零，因为与零异或保持不变
+		for (int k = 0; k < M_GrayImgsNum - 1; ++k) {
+			tempVal ^= (grayImgPtrs[k][j] > threshold) ? 1 : 0;
+			K1 = (K1 << 1) + tempVal;
+		}
+		// 处理互补格雷码获取K2
+		tempVal ^= (grayImgPtrs[M_GrayImgsNum - 1][j] > threshold) ? 1 : 0;
+		const int K2 = ((K1 << 1) + tempVal + 1) >> 1; // 使用位移代替除法
+		return { K1, K2 };
+	}
+
+	inline std::pair<float, int> unwrapPhaseInline(float wrappedPhase, int K1, int K2) {
+		if (wrappedPhase <= CV_PI * 0.5f) {
+			return { wrappedPhase + CV_2PI * K2, K2 };
+		}
+		else if (wrappedPhase >= CV_PI * 1.5f) {
+			return { wrappedPhase + CV_2PI * (K2 - 1), K2 - 1 };
+		}
+		else {
+			return { wrappedPhase + CV_2PI * K1, K1 };
+		}
+	}
 
 
 private:

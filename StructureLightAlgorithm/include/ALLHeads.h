@@ -11,3 +11,4 @@
 #include "HDR_ImageFusion.h"
 #include "ImagepreProcessing.h"
 #include "ImageReprocess.h"
+#include "PhaseErrorAnalyze.h"
