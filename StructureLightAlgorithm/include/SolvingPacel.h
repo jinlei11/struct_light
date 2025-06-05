@@ -27,6 +27,20 @@ enum CameraPosition {
 };
 
 
+/*
+ * @ brief  自适应阈值计算方法枚举
+ * @ OTSU                Otsu自适应阈值，基于类间方差最大化
+ * @ LOCAL_MEAN          局部均值阈值，使用邻域像素均值
+ * @ ADAPTIVE_GAUSSIAN   高斯加权自适应阈值，使用高斯权重计算邻域阈值
+ * @ HYBRID              混合方法，根据局部方差自适应调整权重
+ */
+enum class ThresholdMethod {
+	OTSU,
+	LOCAL_MEAN,
+	ADAPTIVE_GAUSSIAN,
+	HYBRID
+};
+
 
 class SolvingPacel {
 public:
@@ -117,17 +131,20 @@ public:
 				 bool isRename);
 
 
+
 	/*
-	 * @ brief  对单组投影图案进行相位解算
-	 * @ param  ProjectionPatterns   单组投影图案
-	 * @ param  Phase                解算出的解包裹相位
-	 * @ param  FringeOrder          条纹级次图
-	 * @ param  regulatory           调制度B的值
-	*/
+	 * @ brief  对单组投影图案进行相位解算，单步相位展开主函数（优化版本）
+	 * @ param  ProjectionPatterns  投影图案数组，包含格雷码图和相位图
+	 * @ param  Phase               输出的绝对相位矩阵
+	 * @ param  FringeOrder         输出的条纹级次矩阵
+	 * @ param  regulatory          调制度阈值，默认为5
+	 * @ param  thresholdMethod     自适应阈值计算方法，默认为混合方法
+	 */
 	void SingleDePhase(const std::vector<cv::Mat>& ProjectionPatterns,
 									 cv::Mat& Phase,
 									 cv::Mat& FringeOrder,
-									 int regulatory);
+									 int regulatory,
+									 ThresholdMethod thresholdMethod);
 	 
 
 	/*
@@ -305,6 +322,247 @@ private:
 			return { wrappedPhase + CV_2PI * K1, K1 };
 		}
 	}
+
+
+	/*
+	 * @ brief     以下函数用于格雷码的二值化
+	 * @ struct    calculateOtsuThreshold                 计算Otsu自适应阈值（针对单个像素周围区域）
+	 * @ function  calculateLocalAdaptiveThreshold        计算局部自适应阈值
+	 * @ function  calculateGaussianAdaptiveThreshold     计算高斯加权自适应阈值
+	 * @ function  calculateHybridThreshold               计算混合自适应阈值方法
+	 * @ function  decodeGrayCodeInlineOptimized          优化的格雷码解码函数，使用自适应阈值
+	*/
+
+
+	/*
+	 * @ brief  计算Otsu自适应阈值（针对单个像素周围区域）
+	 * @ param  grayImgPtrs     格雷码图像行指针数组
+	 * @ param  centerJ         中心像素的列索引
+	 * @ param  width           图像宽度
+	 * @ param  windowSize      计算窗口大小，默认为5
+	 * @ return float           计算得到的Otsu阈值
+	 */
+	inline float calculateOtsuThreshold(const std::vector<const float*>& grayImgPtrs,
+										int centerJ, 
+										int width, 
+										int windowSize = 5) {
+		const int halfWindow = windowSize / 2;
+		const int startJ = std::max(0, centerJ - halfWindow);
+		const int endJ = std::min(width - 1, centerJ + halfWindow);
+
+		// 收集窗口内所有格雷码图像的像素值
+		std::vector<float> pixels;
+		pixels.reserve((endJ - startJ + 1) * grayImgPtrs.size());
+
+		for (size_t imgIdx = 0; imgIdx < grayImgPtrs.size(); ++imgIdx) {
+			for (int j = startJ; j <= endJ; ++j) {
+				pixels.push_back(grayImgPtrs[imgIdx][j]);
+			}
+		}
+
+		if (pixels.empty()) return 128.0f;
+
+		// 简化的Otsu算法
+		std::sort(pixels.begin(), pixels.end());
+
+		float bestThreshold = pixels[pixels.size() / 2]; // 默认中位数
+		float maxVariance = 0.0f;
+
+		const size_t totalPixels = pixels.size();
+
+		// 在像素值范围内搜索最佳阈值
+		for (size_t t = 1; t < totalPixels - 1; ++t) {
+			const float threshold = pixels[t];
+
+			// 计算前景和背景的权重和均值
+			float w0 = static_cast<float>(t) / totalPixels;
+			float w1 = 1.0f - w0;
+
+			if (w0 == 0 || w1 == 0) continue;
+
+			float sum0 = 0, sum1 = 0;
+			for (size_t i = 0; i < t; ++i) sum0 += pixels[i];
+			for (size_t i = t; i < totalPixels; ++i) sum1 += pixels[i];
+
+			float mean0 = sum0 / t;
+			float mean1 = sum1 / (totalPixels - t);
+
+			// 类间方差
+			float variance = w0 * w1 * (mean0 - mean1) * (mean0 - mean1);
+
+			if (variance > maxVariance) {
+				maxVariance = variance;
+				bestThreshold = threshold;
+			}
+		}
+		return bestThreshold;
+	}
+
+
+	/*
+	 * @ brief  计算局部自适应阈值
+	 * @ param  grayImgPtrs     格雷码图像行指针数组
+	 * @ param  centerJ         中心像素的列索引
+	 * @ param  width           图像宽度
+	 * @ param  windowSize      计算窗口大小，默认为7
+	 * @ return float           计算得到的局部均值阈值
+	 */
+	inline float calculateLocalAdaptiveThreshold(const std::vector<const float*>& grayImgPtrs,
+												 int centerJ, 
+												 int width, 
+												 int windowSize = 7) {
+		const int halfWindow = windowSize / 2;
+		const int startJ = std::max(0, centerJ - halfWindow);
+		const int endJ = std::min(width - 1, centerJ + halfWindow);
+
+		float sum = 0.0f;
+		int count = 0;
+
+		// 计算窗口内所有格雷码图像的平均值
+		for (size_t imgIdx = 0; imgIdx < grayImgPtrs.size(); ++imgIdx) {
+			for (int j = startJ; j <= endJ; ++j) {
+				sum += grayImgPtrs[imgIdx][j];
+				count++;
+			}
+		}
+		return count > 0 ? sum / count : 128.0f;
+	}
+
+
+	/*
+	 * @ brief  计算高斯加权自适应阈值
+	 * @ param  grayImgPtrs     格雷码图像行指针数组
+	 * @ param  centerJ         中心像素的列索引
+	 * @ param  width           图像宽度
+	 * @ param  windowSize      计算窗口大小，默认为7
+	 * @ return float           计算得到的高斯加权阈值
+	 */
+	inline float calculateGaussianAdaptiveThreshold(const std::vector<const float*>& grayImgPtrs,
+													int centerJ, 
+													int width, 
+													int windowSize = 7) {
+		const int halfWindow = windowSize / 2;
+		const int startJ = std::max(0, centerJ - halfWindow);
+		const int endJ = std::min(width - 1, centerJ + halfWindow);
+
+		// 预计算高斯权重
+		std::vector<float> gaussWeights(windowSize);
+		const float sigma = windowSize / 3.0f;
+		float weightSum = 0.0f;
+
+		for (int i = 0; i < windowSize; ++i) {
+			float dist = (i - halfWindow) * (i - halfWindow);
+			gaussWeights[i] = exp(-dist / (2 * sigma * sigma));
+			weightSum += gaussWeights[i];
+		}
+
+		// 归一化权重
+		for (float& w : gaussWeights) {
+			w /= weightSum;
+		}
+
+		float weightedSum = 0.0f;
+
+		// 计算加权平均值
+		for (size_t imgIdx = 0; imgIdx < grayImgPtrs.size(); ++imgIdx) {
+			for (int j = startJ; j <= endJ; ++j) {
+				int weightIdx = j - startJ;
+				if (weightIdx < static_cast<int>(gaussWeights.size())) {
+					weightedSum += grayImgPtrs[imgIdx][j] * gaussWeights[weightIdx];
+				}
+			}
+		}
+
+		return weightedSum;
+	}
+
+
+	/*
+	 * @ brief  计算混合自适应阈值方法
+	 * @ param  grayImgPtrs     格雷码图像行指针数组
+	 * @ param  centerJ         中心像素的列索引
+	 * @ param  width           图像宽度
+	 * @ param  avgIntensity    像素平均强度值
+	 * @ return float           计算得到的混合阈值
+	 */
+	inline float calculateHybridThreshold(const std::vector<const float*>& grayImgPtrs,
+										  int centerJ, 
+										  int width, 
+										  float avgIntensity) {
+		// 结合局部自适应和全局平均值
+		float localThreshold = calculateLocalAdaptiveThreshold(grayImgPtrs, centerJ, width);
+		float globalThreshold = avgIntensity;
+
+		// 根据局部方差决定权重
+		float localVariance = 0.0f;
+		int count = 0;
+		const int windowSize = 5;
+		const int halfWindow = windowSize / 2;
+		const int startJ = std::max(0, centerJ - halfWindow);
+		const int endJ = std::min(width - 1, centerJ + halfWindow);
+
+		for (size_t imgIdx = 0; imgIdx < grayImgPtrs.size(); ++imgIdx) {
+			for (int j = startJ; j <= endJ; ++j) {
+				float diff = grayImgPtrs[imgIdx][j] - localThreshold;
+				localVariance += diff * diff;
+				count++;
+			}
+		}
+
+		localVariance = count > 0 ? sqrt(localVariance / count) : 0.0f;
+
+		// 方差大时更依赖局部阈值，方差小时更依赖全局阈值
+		float localWeight = std::min(1.0f, localVariance / 50.0f); // 50是经验值，可调整
+		return localWeight * localThreshold + (1.0f - localWeight) * globalThreshold;
+	}
+
+
+	/*
+	 * @ brief  优化的格雷码解码函数，使用自适应阈值
+	 * @ param  grayImgPtrs     格雷码图像行指针数组
+	 * @ param  j               当前像素的列索引
+	 * @ param  width           图像宽度
+	 * @ param  avgIntensity    像素平均强度值
+	 * @ param  method          自适应阈值计算方法，默认为混合方法
+	 * @ return std::pair<int, int>  返回解码得到的K1和K2值
+	 */
+	inline std::pair<int, int> decodeGrayCodeInlineOptimized(const std::vector<const float*>& grayImgPtrs,
+															 int j, int width,
+															 float avgIntensity,
+															 ThresholdMethod method = ThresholdMethod::HYBRID) {
+		// 根据选择的方法计算自适应阈值
+		float threshold;
+		switch (method) {
+		case ThresholdMethod::OTSU:
+			threshold = calculateOtsuThreshold(grayImgPtrs, j, width);
+			break;
+		case ThresholdMethod::LOCAL_MEAN:
+			threshold = calculateLocalAdaptiveThreshold(grayImgPtrs, j, width);
+			break;
+		case ThresholdMethod::ADAPTIVE_GAUSSIAN:
+			threshold = calculateGaussianAdaptiveThreshold(grayImgPtrs, j, width);
+			break;
+		case ThresholdMethod::HYBRID:
+		default:
+			threshold = calculateHybridThreshold(grayImgPtrs, j, width, avgIntensity);
+			break;
+		}
+
+		int K1 = 0, tempVal = 0;
+		// 解码格雷码获取K1
+		for (int k = 0; k < static_cast<int>(grayImgPtrs.size()) - 1; ++k) {
+			tempVal ^= (grayImgPtrs[k][j] > threshold) ? 1 : 0;
+			K1 = (K1 << 1) + tempVal;
+		}
+
+		// 处理互补格雷码获取K2
+		tempVal ^= (grayImgPtrs[grayImgPtrs.size() - 1][j] > threshold) ? 1 : 0;
+		const int K2 = ((K1 << 1) + tempVal + 1) >> 1;
+		return { K1, K2 };
+	}
+
+
+
 
 
 private:

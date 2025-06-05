@@ -364,4 +364,8 @@ FodyWeavers.xsd
 
 
 *.bmp
-*.txt
+/CloudPoints/result.txt
+/CloudPoints/刀具+量块.txt
+/CloudPoints/刀具0601.txt
+/CloudPoints/天使.txt
+/CloudPoints/平面.txt

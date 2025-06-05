@@ -393,17 +393,18 @@ SolvingPacel::SolvingPacel(const std::string& ImagepathLeft,
 void SolvingPacel::SingleDePhase(const std::vector<cv::Mat>& ProjectionPatterns,
 								 cv::Mat& Phase, 
 								 cv::Mat& FringeOrder, 
-								 int regulatory = 5) {
+								 int regulatory = 5,
+								 ThresholdMethod thresholdMethod = ThresholdMethod::HYBRID) {
 	// 输入验证
 	CV_Assert(ProjectionPatterns.size() >= static_cast<size_t>(M_GrayImgsNum + M_PhaseImgsNum));
 	CV_Assert(!ProjectionPatterns.empty() && !ProjectionPatterns[0].empty());
 
 	// 初始化矩阵
-	cv::Mat wrappedPhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);
-	cv::Mat absolutePhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);
-	cv::Mat averageIntensity = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);
-	cv::Mat modulation = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);
-	cv::Mat fringeOrder = cv::Mat::zeros(M_Height, M_Width, CV_32SC1);
+	cv::Mat wrappedPhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);      // 包裹相位
+	cv::Mat absolutePhase = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);     // 绝对相位;
+	cv::Mat averageIntensity = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);  // 背景强度;
+	cv::Mat modulation = cv::Mat::zeros(M_Height, M_Width, CV_32FC1);        // 新增：调制度矩阵
+	cv::Mat fringeOrder = cv::Mat::zeros(M_Height, M_Width, CV_32SC1);       // 存储条纹级次K
 
 	const float regulatoryThreshold = static_cast<float>(regulatory);
 	const TrigValues trig(M_PhaseImgsNum);
@@ -444,14 +445,20 @@ void SolvingPacel::SingleDePhase(const std::vector<cv::Mat>& ProjectionPatterns,
 				modPtr[j] = modulationValue;
 				avgPtr[j] = sumIntensity * trig.invPhaseImgsNum;
 
+
 				if (modulationValue > regulatoryThreshold) {
 					wrappedPtr[j] = -atan2(numerator, denominator);
 
-					// 步骤2：相位展开（内联处理）
+					 //步骤2：相位展开（内联处理）
 					const float threshold = avgPtr[j];
 					auto [K1, K2] = decodeGrayCodeInline(grayImgPtrs, j, threshold);
-
 					auto [unwrappedPhase, finalK] = unwrapPhaseInline(wrappedPtr[j], K1, K2);
+
+					//// 步骤2改进：使用优化的自适应阈值进行相位展开
+					//auto [K1, K2] = decodeGrayCodeInlineOptimized(grayImgPtrs, j, M_Width,
+					//	avgPtr[j], thresholdMethod);
+					//auto [unwrappedPhase, finalK] = unwrapPhaseInline(wrappedPtr[j], K1, K2);
+
 					absPhasePtr[j] = unwrappedPhase;
 					fringeOrderPtr[j] = finalK;
 				}
@@ -469,7 +476,6 @@ void SolvingPacel::SingleDePhase(const std::vector<cv::Mat>& ProjectionPatterns,
 	FringeOrder = std::move(fringeOrder);
 
 	std::vector<cv::Mat> Phases(ProjectionPatterns.begin() + M_GrayImgsNum - 1, ProjectionPatterns.end() - M_AncillaryPatternNum);
-	std::cout << Phases.size() << std::endl;
 	cv::Mat PhaseError = PhaseErrorAnalyzer::calculateComprehensivePhaseError(Phases,
 																			  wrappedPhase,
 																			  modulation,
