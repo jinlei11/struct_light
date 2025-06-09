@@ -20,7 +20,8 @@ enum CalibrationPlate {
 	Plate_doubleCircle = 1,
 	Plate_bigCircle = 2,
 	Plate_Big_chess = 3,
-	Plate_smallCircle = 4
+	Plate_smallCircle = 4,
+	Plate_chess811 = 5
 };
 
 //极线矫正精度评估

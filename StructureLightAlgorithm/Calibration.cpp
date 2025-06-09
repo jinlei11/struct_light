@@ -34,6 +34,11 @@ CameraCalibration::CameraCalibration(enum CalibrationPlate Plate,
 		this->M_board_size = cv::Size(12, 9);
 		this->M_squareSize = cv::Size(3, 3);
 		this->M_CalibPlateType = 4;
+		 
+	case Plate_chess811:
+		this->M_board_size = cv::Size(8, 11);
+		this->M_squareSize = cv::Size(3, 3);
+		this->M_CalibPlateType = 5;
 
 	default:
 		break;

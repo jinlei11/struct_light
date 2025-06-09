@@ -6,9 +6,53 @@
 #include <vector>
 #include <Eigen/Dense>
 #include <numeric>
+#include "FileManipulation.h"
+#include "Calibration.h"
+
+
+
 
 using namespace std;
 using namespace cv;
+
+
+
+
+
+
+class OpticalPlaneCalibration {
+public:
+
+	OpticalPlaneCalibration(const std::string& BoardPath, const std::string& OpticalPlanePath, enum CalibrationPlate boardClass);
+
+
+public:
+	// 计算光平面标定图像的r t 
+	void getRT(const Mat& cameraMatrix, const Mat& distCoeffs,
+		vector<Mat>& rotationMat, vector<Mat>& translationMat,
+		bool show);
+
+	void Get_Camera_Data(const std::string& cameraParamsPath, Mat& instrinsic_Mat, Mat& distCoeff);
+
+
+private:
+	//Number of corner points of a checkerboard grid or circular calibration board (Width, Height)
+	cv::Size M_board_size;
+
+	//Checkerboard or circular calibration board with square dimensions or circle spacing
+	cv::Size M_squareSize;
+
+	//Distinguishing calibration plate types
+	int M_CalibPlateType;
+
+	//保存标定板图片的路径
+	std::string M_PlaneBoardFilePath;
+	//保存激光线图片的路径
+	std::string M_PlaneLineFilePath;
+
+
+};
+
 
 
 
@@ -17,15 +61,13 @@ using namespace cv;
 class Centerline {
 public:
 	// 预处理  将原图 src 进行处理，得到处理后的图像 imgHSVMask
-	void picture_blur(Mat src, Mat& imgHSVMask, vector<Rect>& rois) {
+	void picture_blur(Mat& src, Mat& imgHSVMask, vector<Rect>& rois) {
 		Mat img;
 		Mat imgGauss, imgRrode, imgDilate;
-		cvtColor(src, img, COLOR_BGR2GRAY);
 
-		threshold(img, img, 0, 255, THRESH_OTSU);
+		threshold(src, img, 0, 255, THRESH_OTSU);
 
 		GaussianBlur(img, imgGauss, Size(3, 3), 0);
-
 
 		Mat element = getStructuringElement(MORPH_RECT, Size(3, 3));
 
@@ -35,15 +77,16 @@ public:
 		// 自动框选roi
 		int sSize = 2000;	// 面积阈值100	
 		imgHSVMask = autoroi(imgHSVMask, sSize, rois);	// 好像相机标定的激光图不太适用
+
 		// 保存ROI区域的灰度值
 		//saveMultipleRowsToTxtInROIs(imgHSVMask, rois);
-
+		// 
 		// 手动框选roi
 		//imgHSVMask = handroi(imgHSVMask);
 	}
 
-	// 提取激光条纹中心线
-	void ExtractCenters(Mat src, Mat& imgHSVMask, vector<Rect>& rois) {
+	// 提取激光条纹中心线  修改：应该将结果作为返回值传回，而不是用成员变量存储
+	std::vector<cv::Point2d> ExtractCenters(Mat src, Mat& imgHSVMask, vector<Rect>& rois) {
 		int w, brightValue;
 
 		// 评估光条宽度w
@@ -74,6 +117,7 @@ public:
 		src.copyTo(huidu_img1);
 		//cvtColor(huidu_img1, huidu_img1, COLOR_GRAY2BGR);
 		drawPointsOnImage(smooth_points, huidu_img1);
+		return smooth_points;
 	}
 
 	vector<Point2d> Center_points; //激光中心线
@@ -103,7 +147,7 @@ private:
 
 
 	// ------------------------ROI------------------------
-	// 自动框选roi 	
+	// 自动框选roi 	 修改：传入引用即可
 	Mat autoroi(Mat img, int size, vector<Rect>& rois) {
 		Mat cimg;
 		img.copyTo(cimg);
@@ -303,7 +347,7 @@ private:
 	// 光条宽度w
 	void estimateWidth(const Mat& gray, const vector<Rect>& rois, int& w, int& brightValue) {
 		vector<uchar> nonZeroValues;
-
+		//存入ROI区域内所有的非0灰度值
 		for (const auto& roi : rois) {
 			for (int y = roi.y; y < roi.y + roi.height; ++y) {
 				const uchar* row = gray.ptr<uchar>(y);
@@ -330,6 +374,7 @@ private:
 		int totalPixels = 0;
 		int rowCount = 0;
 
+		//对所有 ROI 中的每一行，统计该行中大于等于 brightValue 的像素个数，累加求平均，最终得到条纹宽度 w
 		for (const auto& roi : rois) {
 			for (int y = roi.y; y < roi.y + roi.height; ++y) {
 				const uchar* row = gray.ptr<uchar>(y);
@@ -539,6 +584,7 @@ private:
 
 		for (const Rect& roi : rois) {
 			for (int row = roi.y; row < roi.y + roi.height; ++row) {
+
 				// 1. 找初始中心点
 				int x0 = initialCenter(gray, row, roi);
 				if (x0 < 0) continue;
@@ -569,17 +615,10 @@ private:
 					centers.emplace_back(pt.x, refinedY);*/
 					centers.emplace_back(pt.x, row);
 				}
-
 			}
 		}
 		return centers;
 	}
-
-
-
-
-
-
 
 
 	//------------------------获取中心线------------------------
@@ -770,15 +809,43 @@ private:
 class Turn_to_3D {
 public:
 	void Set_param(Mat instrinsic_Mat, Mat distCoeff, Mat translationMat, Mat rotationMat, Mat image,
-		vector<Point2d> laser_pix, int chessboard_width, int chessboard_height){
+		vector<Point2d> laser_pix, enum CalibrationPlate boardClass){
 		this->instrinsic_Mat = instrinsic_Mat;
 		this->distCoeff = distCoeff;
 		this->translationMat = translationMat;
 		this->rotationMat = rotationMat;
 		this->image = image;
 		this->laser_pix = laser_pix;
-		this->chessboard_width = chessboard_width;
-		this->chessboard_height = chessboard_height;
+
+		switch (boardClass)
+		{
+		case Plate_GP050:
+			this->chessboard_width = 11;
+			this->chessboard_height = 8;
+			break;
+		case Plate_doubleCircle:
+			this->chessboard_width = 7;
+			this->chessboard_height = 5;
+			break;
+		case Plate_bigCircle:
+			this->chessboard_width = 13;
+			this->chessboard_height = 10;
+			break;
+		case Plate_Big_chess:
+			this->chessboard_width = 9;
+			this->chessboard_height = 6;
+			break;
+		case Plate_smallCircle:
+			this->chessboard_width = 12;
+			this->chessboard_height = 9;
+			break;
+		case Plate_chess811:
+			this->chessboard_width = 8;
+			this->chessboard_height = 11;
+			break;
+		default:
+			break;
+		}
 	}
 	/**
 	* @brief 标定板外参转为标定板平面方程 Ax+By+Cz+D=0
@@ -817,7 +884,7 @@ public:
 	}
 
 
-	void Get_Intersection(int ImageNum){
+	void Get_Intersection(){
 		Size boardSize;
 		boardSize.width = chessboard_width;//宽---与激光线垂直
 		boardSize.height = chessboard_height;//高---与激光线平行
@@ -837,10 +904,8 @@ public:
 
 		vector<Point2d> pointbuf;
 		bool found;
-		Mat img2;
 
-		cvtColor(image, img2, cv::COLOR_BGR2GRAY);
-		found = findChessboardCornersSB(img2, boardSize, pointbuf, CALIB_CB_EXHAUSTIVE | CALIB_CB_ACCURACY);
+		found = findChessboardCornersSB(image, boardSize, pointbuf, CALIB_CB_EXHAUSTIVE | CALIB_CB_ACCURACY);
 		//cout << "found = " << found << endl;
 		//drawPointsOnImage(pointbuf, img2);
 
@@ -871,10 +936,6 @@ public:
 			image.copyTo(huidu_img2);
 			drawPointsOnImage(laser_chess_p, huidu_img2);
 
-
-
-
-
 			ofstream ofs("交点.txt", ios::trunc);
 			for (const auto& pt : laser_chess_p) {
 				ofs << pt.x << "\t" << pt.y << endl;
@@ -889,7 +950,7 @@ public:
 
 	//** @brief 像素坐标系转相机坐标系
 
-	void LaserPoints_cam(){
+	vector<Point3d> LaserPoints_cam(){
 		//平面方程的方向向量
 		double a1 = plane.at<double>(0, 0);
 		double b1 = plane.at<double>(0, 1);
@@ -929,9 +990,8 @@ public:
 			camPoints.push_back(p);
 
 		}
-		laser_cam = camPoints;
+		return camPoints;
 	}
-	vector<Point3d> laser_cam;//相机坐标系下的点
 
 private:
 	Mat instrinsic_Mat;
@@ -979,3 +1039,9 @@ private:
 };
 
 
+void OptPlaneCalibration(const std::string& PlaneBoardFilename, 
+						 const std::string& PlaneLineFilename,
+						 const std::string& camParamPath,
+						 const std::string& PointsPath,
+						 const std::string& PlanePath,
+	                     enum CalibrationPlate BoardClass);

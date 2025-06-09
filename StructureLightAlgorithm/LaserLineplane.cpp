@@ -8,20 +8,62 @@ using namespace std;
 using namespace cv;
 
 
+
+OpticalPlaneCalibration::OpticalPlaneCalibration(const std::string& BoardPath, const std::string& OpticalPlanePath, enum CalibrationPlate boardClass)
+	:M_PlaneBoardFilePath(BoardPath), M_PlaneLineFilePath(OpticalPlanePath)
+{
+	switch (boardClass)
+	{
+	case Plate_GP050:
+		this->M_board_size = cv::Size(11, 8);
+		this->M_squareSize = cv::Size(3, 3);
+		this->M_CalibPlateType = 0;
+		break;
+	case Plate_doubleCircle:
+		this->M_board_size = cv::Size(7, 5);
+		this->M_squareSize = cv::Size(9, 9);
+		this->M_CalibPlateType = 1;
+		break;
+	case Plate_bigCircle:
+		this->M_board_size = cv::Size(13, 10);
+		this->M_squareSize = cv::Size(15, 15);
+		this->M_CalibPlateType = 2;
+		break;
+	case Plate_Big_chess:
+		this->M_board_size = cv::Size(9, 6);
+		this->M_squareSize = cv::Size(50, 50);
+		this->M_CalibPlateType = 3;
+	case Plate_smallCircle:
+		this->M_board_size = cv::Size(12, 9);
+		this->M_squareSize = cv::Size(3, 3);
+		this->M_CalibPlateType = 4;
+
+	case Plate_chess811:
+		this->M_board_size = cv::Size(8, 11);
+		this->M_squareSize = cv::Size(3, 3);
+		this->M_CalibPlateType = 5;
+
+	default:
+		break;
+	}
+
+};
+
+
+
+
 // 计算光平面标定图像的r t 
-void getRT(int num, const string& imagePath, const Size& boardSize, float squareSize,
-	const Mat& cameraMatrix, const Mat& distCoeffs, vector<Mat>& rotationMat, vector<Mat>& translationMat, bool show = false) {
+void OpticalPlaneCalibration::getRT(const Mat& cameraMatrix, const Mat& distCoeffs,
+	       std::vector<cv::Mat>& rotationMat, std::vector<cv::Mat>& translationMat, 
+		   bool show = false) {
 
 	// 构建棋盘格世界坐标 objectPoints
 	vector<Point3f> objPoints;
-	for (int i = 0; i < boardSize.height; ++i) {
-		for (int j = 0; j < boardSize.width; ++j) {
-			objPoints.emplace_back(j * squareSize, i * squareSize, 0.0f);
+	for (int i = 0; i < M_board_size.height; ++i) {
+		for (int j = 0; j < M_board_size.width; ++j) {
+			objPoints.emplace_back(j * M_squareSize.width, i * M_squareSize.width, 0.0f);
 		}
 	}
-
-	rotationMat.clear();
-	translationMat.clear();
 
 	// 打开文件并清空旧内容
 	std::ofstream outFile("extrinsic_parameters.txt", std::ios::out | std::ios::trunc);
@@ -30,61 +72,108 @@ void getRT(int num, const string& imagePath, const Size& boardSize, float square
 		return;
 	}
 
-	for (int i = 1; i <= num; ++i) {
-		string filename = imagePath + to_string(i) + ".bmp";
-		Mat img = imread(filename);
-		if (img.empty()) {
-			cout << "无法读取图像: " << filename << endl;
-			continue;
+
+	//获取图像
+	FileManipulation ImageGet;
+	std::vector<cv::Mat> BoardPics = ImageGet.ReadPics(M_PlaneBoardFilePath);
+	//根据标定板类型，进行分类处理
+	if (M_CalibPlateType == 1 || M_CalibPlateType == 4) {
+		for (auto& img : BoardPics) {
+			vector<Point2f> imgPoints;
+
+			cv::SimpleBlobDetector::Params params;
+			cv::Ptr<cv::FeatureDetector> blob = cv::SimpleBlobDetector::create(params);
+			params.maxArea = 1000;
+			params.minArea = 100;
+			params.minDistBetweenBlobs = 10;
+
+			bool found = cv::findCirclesGrid(img, M_board_size, imgPoints, cv::CALIB_CB_SYMMETRIC_GRID, blob);
+			if (show) {
+				cv::Mat imgCopy;
+				if (img.channels() == 1) {
+					cv::cvtColor(img, imgCopy, cv::COLOR_GRAY2BGR);  // 将灰度图转为彩色图
+				}
+				else {
+					imgCopy = img.clone();
+				}
+				cv::drawChessboardCorners(imgCopy, M_board_size, imgPoints, found);
+				cv::namedWindow("corner", cv::WINDOW_NORMAL);
+				cv::imshow("corner", imgCopy);
+				cv::waitKey(500);
+			}
+
+			// 求解 R/T
+			Mat rvec, tvec;
+			solvePnP(objPoints, imgPoints, cameraMatrix, distCoeffs, rvec, tvec);
+
+			// 写入 TXT 文件
+			outFile << "Image " << ":" << std::endl;
+			outFile << "Rotation Vector (Rodrigues):" << std::endl;
+			for (int j = 0; j < 3; ++j) {
+				outFile << rvec.at<double>(j, 0) << " ";
+			}
+			outFile << std::endl;
+
+			outFile << "Translation Vector:" << std::endl;
+			for (int j = 0; j < 3; ++j) {
+				outFile << tvec.at<double>(j, 0) << " ";
+			}
+			outFile << std::endl << std::endl;
 		}
-
-		vector<Point2f> imgPoints;
-		bool found = findChessboardCornersSB(img, boardSize, imgPoints);
-		if (!found) {
-			cout << "未找到角点: " << filename << endl;
-			continue;
-		}
-
-		// 精细化角点
-		Mat gray;
-		cvtColor(img, gray, COLOR_BGR2GRAY);
-		cornerSubPix(gray, imgPoints, Size(11, 11), Size(-1, -1),
-			TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.01));
-
-		// 求解 R/T
-		Mat rvec, tvec;
-		solvePnP(objPoints, imgPoints, cameraMatrix, distCoeffs, rvec, tvec);
-
-		rotationMat.push_back(rvec);
-		translationMat.push_back(tvec);
-
-		// 写入 TXT 文件
-		outFile << "Image " << i << ":" << std::endl;
-		outFile << "Rotation Vector (Rodrigues):" << std::endl;
-		for (int j = 0; j < 3; ++j) {
-			outFile << rvec.at<double>(j, 0) << " ";
-		}
-		outFile << std::endl;
-
-		outFile << "Translation Vector:" << std::endl;
-		for (int j = 0; j < 3; ++j) {
-			outFile << tvec.at<double>(j, 0) << " ";
-		}
-		outFile << std::endl << std::endl;
-
-		if (show) {
-			drawChessboardCorners(img, boardSize, imgPoints, found);
-			imshow("corners", img);
-			waitKey(100);
-		}
-
-		//cout << "图像 " << i << " 处理完成。" << endl;
 	}
+	else {
+		//提取角点
+		for (auto& img : BoardPics) {
+			vector<Point2f> imgPoints;
+			bool found = findChessboardCornersSB(img, M_board_size, imgPoints);
+			// 精细化角点
+			Mat gray;
+			//cvtColor(img, gray, COLOR_BGR2GRAY);
+			//cornerSubPix(gray, imgPoints, Size(11, 11), Size(-1, -1),
+			//	         TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.01));
 
+			if (show) {
+				cv::Mat imgCopy;
+				if (img.channels() == 1) {
+					cv::cvtColor(img, imgCopy, cv::COLOR_GRAY2BGR);  // 将灰度图转为彩色图
+				}
+				else {
+					imgCopy = img.clone();
+				}
+				cv::drawChessboardCorners(imgCopy, M_board_size, imgPoints, found);
+				cv::namedWindow("corner", cv::WINDOW_NORMAL);
+				cv::imshow("corner", imgCopy);
+				cv::waitKey(500);
+			}
+
+			// 求解 R/T
+			Mat rvec, tvec;
+			solvePnP(objPoints, imgPoints, cameraMatrix, distCoeffs, rvec, tvec);
+
+			rotationMat.push_back(rvec);
+			translationMat.push_back(tvec);
+
+			// 写入 TXT 文件
+			outFile << "Image " << ":" << std::endl;
+			outFile << "Rotation Vector (Rodrigues):" << std::endl;
+			for (int j = 0; j < 3; ++j) {
+				outFile << rvec.at<double>(j, 0) << " ";
+			}
+			outFile << std::endl;
+
+			outFile << "Translation Vector:" << std::endl;
+			for (int j = 0; j < 3; ++j) {
+				outFile << tvec.at<double>(j, 0) << " ";
+			}
+			outFile << std::endl << std::endl;
+
+		}
+	}
 	outFile.close(); // 关闭文件
 	destroyAllWindows();
 	cout << "所有图像的外参提取完成，共处理 " << rotationMat.size() << " 张图像。" << endl;
 }
+
 
 
 /**
@@ -95,13 +184,11 @@ void getRT(int num, const string& imagePath, const Size& boardSize, float square
 * @param rotationMat	存放外参旋转的容器
 *
 */
-void Get_Camera_Data(Mat& instrinsic_Mat, Mat& distCoeff) {
+void OpticalPlaneCalibration::Get_Camera_Data(const std::string& cameraParamsPath, 
+											  Mat& instrinsic_Mat, 
+											  Mat& distCoeff) {
 	//读取相机标定的结果
-	//string camPath = "D:\\实验室资料\\24.09.25重建\\内参\\out_camera_data.yml";
-	string camPath = "C:\\Users\\W\\Desktop\\0530\\camera\\out_camera_data.yml";
-	//或者是自己提供的根目录下的相机参数
-	//string camPath = "out_camera_data相机.yml";
-	FileStorage camPara(camPath, FileStorage::READ);
+	FileStorage camPara(cameraParamsPath, FileStorage::READ);
 	if (!camPara.isOpened())
 	{
 		cout << "--------------相机参数打开失败-----------" << endl;
@@ -119,9 +206,9 @@ void Get_Camera_Data(Mat& instrinsic_Mat, Mat& distCoeff) {
 *
 * @return 平面方程Ax+By+Cz+D=0
 */
-Mat plane_fitting(const vector<Point3f>& input) {
-	Mat dst = Mat(3, 3, CV_32F, Scalar(0));  // 3x3 矩阵
-	Mat out = Mat(3, 1, CV_32F, Scalar(0));
+cv::Mat plane_fitting(const vector<Point3f>& input) {
+	cv::Mat dst = Mat(3, 3, CV_32F, Scalar(0));  // 3x3 矩阵
+	cv::Mat out = Mat(3, 1, CV_32F, Scalar(0));
 
 	// 计算 dst 和 out 矩阵
 	for (int i = 0; i < input.size(); i++) {
@@ -201,97 +288,77 @@ double Residual(const vector<Point3f>& threeCoordinate, double a, double b, doub
 
 
 
-//int main(int argc, char* argv){
-//	Eigen::MatrixXd m(2, 2);
-//	m << 0, 1, 2, 3;
-//	Eigen::Vector3d x;
-//
-//	//-----------------------------------获取内参和外参-----------------------------------
-//	Mat instrinsic_Mat, distCoeff;
-//	vector<Mat>translationMat, rotationMat;
-//	int num = 11;
-//
-//	string PlaneBoardFilename = "C:\\Users\\W\\Desktop\\0530\\plane\\boards\\";
-//	string PlaneLineFilename = "C:\\Users\\W\\Desktop\\0530\\plane\\lines\\";
-//	Size boardSize(8, 11);		// 标定板尺寸
-//	float squareSize = 3.0f;     // 标定板方格尺寸（毫米）
-//
-//	Get_Camera_Data(instrinsic_Mat, distCoeff);
-//
-//	getRT(num, PlaneBoardFilename, boardSize, squareSize, instrinsic_Mat, distCoeff, rotationMat, translationMat);
-//
-//
-//	//------------------------------------------------------------------------------------
-//
-//	vector<Point3f> laserpoint_cam_all;//存放所有中心点的集合
-//
-//	for (size_t i = 0; i < num; i++){
-//		//读取相机标定图片
-//		Mat image = imread(PlaneBoardFilename + to_string(i + 1) + ".bmp");
-//		Mat src = imread(PlaneLineFilename + to_string(i + 1) + ".bmp");
-//
-//		Mat AfterDis, Board_AfterDis;
-//		//-----------------------------------获取激光中心线-----------------------------------
-//		Mat imgHSVMask;
-//		int startY, endY;
-//		vector<Rect> rois;
-//
-//		Centerline centerline;
-//		centerline.picture_blur(src, imgHSVMask, rois);
-//		centerline.ExtractCenters(src, imgHSVMask, rois);
-//
-//		vector<Point2d> center_points;
-//		center_points = centerline.smooth_points;
-//		//------------------------------------------------------------------------------------
-//
-//		//------------------------------------转相机坐标系------------------------------------
-//		Turn_to_3D turn3d;
-//		turn3d.Set_param(instrinsic_Mat, distCoeff, translationMat[i], rotationMat[i], image, center_points, 8, 11);
-//		turn3d.Get_plane();	//获取标定板平面方程
-//		turn3d.Get_Intersection(i + 1);	//获取激光线与标定板交点
-//
-//		turn3d.LaserPoints_cam();	//交点坐标由像素坐标系转换到相机坐标系
-//
-//		vector<Point3d> centers_cam;
-//		centers_cam = turn3d.laser_cam;	//获取相机坐标系下的点
-//
-//
-//		//将读到的交点存放至laserpoint_cam_all
-//		laserpoint_cam_all.insert(laserpoint_cam_all.end(), centers_cam.begin(), centers_cam.end());
-//		cout << "第" << to_string(i + 1) << "张保存成功" << endl;
-//	}
-//	//------------------------------------保存点------------------------------------
-//	ofstream ofs;
-//	ofs.open("Intersections.txt", ios::trunc);
-//	for (int i = 0; i < laserpoint_cam_all.size(); i++){
-//		ofs << laserpoint_cam_all[i].x << "\t" << laserpoint_cam_all[i].y << "\t" << laserpoint_cam_all[i].z << endl;
-//	}
-//	//------------------------------------------------------------------------------
-//
-//	//-----------------------------------拟合平面-----------------------------------
-//	Mat plane0102 = plane_fitting(laserpoint_cam_all);
-//	// 平面方程 ax + by + cz + d = 0
-//
-//	// 提取拟合平面方程的系数
-//	double a = plane0102.at<float>(0, 0);
-//	double b = plane0102.at<float>(1, 0);
-//	double c = -1.0;
-//	double d = plane0102.at<float>(2, 0);
-//
-//
-//	// 计算均方误差
-//	double derror = Residual(laserpoint_cam_all, a, b, c, d);
-//
-//	// 生成拟合平面上的点
-//	vector<Point3f> planePoints = generatePlanePoints(a, b, c, d, -50, 50, 0.1);
-//
-//	ofstream ofs_plane("PLANE.txt", ios::trunc);
-//
-//	for (int i = 0; i < planePoints.size(); i++) {
-//		ofs_plane << planePoints[i].x << "\t" << planePoints[i].y << "\t" << planePoints[i].z << endl;
-//	}
-//	ofs_plane.close();
-//
-//	waitKey(0);	system("pause");
-//	return 0;
-//}
+void OptPlaneCalibration(const std::string& PlaneBoardFilename, const std::string& PlaneLineFilename,
+						 const std::string& camParamPath, const std::string& PointsPath,
+						 const std::string& PlanePath, enum CalibrationPlate BoardClass) {
+
+	//-----------------------------------获取内参和外参-----------------------------------
+	//获取基础参数信息
+	Mat instrinsic_Mat, distCoeff;
+	vector<Mat>translationMat, rotationMat;
+	OpticalPlaneCalibration getBaseParam(PlaneBoardFilename, PlaneLineFilename, BoardClass);
+	getBaseParam.Get_Camera_Data(camParamPath, instrinsic_Mat, distCoeff);
+	getBaseParam.getRT(instrinsic_Mat, distCoeff, rotationMat, translationMat);
+
+
+	//------------------------------------------------------------------------------------
+	vector<Point3f> laserpoint_cam_all;//存放所有中心点的集合
+	//读取图片
+	FileManipulation ImageGet;
+	std::vector<cv::Mat>BoardPics;
+	std::vector<cv::Mat>OptPlanePics;
+	ImageGet.ReadPics(PlaneBoardFilename, BoardPics);
+	ImageGet.ReadPics(PlaneLineFilename, OptPlanePics);
+
+
+	for (size_t i = 0; i < BoardPics.size(); i++){
+		cv::Mat AfterDis, Board_AfterDis;
+		//-----------------------------------获取激光中心线-----------------------------------
+		cv::Mat imgHSVMask;
+		std::vector<cv::Rect> rois;
+
+		Centerline centerline;
+		centerline.picture_blur(OptPlanePics[i], imgHSVMask, rois);
+		std::vector<cv::Point2d> center_points = centerline.ExtractCenters(OptPlanePics[i], imgHSVMask, rois);
+
+
+		//------------------------------------转相机坐标系------------------------------------
+		Turn_to_3D turn3d;
+		turn3d.Set_param(instrinsic_Mat, distCoeff, translationMat[i], rotationMat[i], BoardPics[i], center_points, BoardClass);
+		turn3d.Get_plane();	//获取标定板平面方程
+		turn3d.Get_Intersection();	//获取激光线与标定板交点
+		vector<Point3d> centers_cam = turn3d.LaserPoints_cam();	//交点坐标由像素坐标系转换到相机坐标系
+
+		//将读到的交点存放至laserpoint_cam_all
+		laserpoint_cam_all.insert(laserpoint_cam_all.end(), centers_cam.begin(), centers_cam.end());
+		cout << "第" << to_string(i + 1) << "张保存成功" << endl;
+	}
+	//------------------------------------保存点------------------------------------
+	ofstream ofs;
+	ofs.open(PointsPath, ios::trunc);
+	for (int i = 0; i < laserpoint_cam_all.size(); i++){
+		ofs << laserpoint_cam_all[i].x << "\t" << laserpoint_cam_all[i].y << "\t" << laserpoint_cam_all[i].z << endl;
+	}
+	//------------------------------------------------------------------------------
+
+	//-----------------------------------拟合平面-----------------------------------
+	cv::Mat plane0102 = plane_fitting(laserpoint_cam_all);
+	// 平面方程 ax + by + cz + d = 0
+
+	// 提取拟合平面方程的系数
+	double a = plane0102.at<float>(0, 0);
+	double b = plane0102.at<float>(1, 0);
+	double c = -1.0;
+	double d = plane0102.at<float>(2, 0);
+
+	// 计算均方误差
+	double derror = Residual(laserpoint_cam_all, a, b, c, d);
+
+	// 生成拟合平面上的点
+	vector<Point3f> planePoints = generatePlanePoints(a, b, c, d, -50, 50, 0.1);
+	ofstream ofs_plane(PlanePath, ios::trunc);
+	for (int i = 0; i < planePoints.size(); i++) {
+		ofs_plane << planePoints[i].x << "\t" << planePoints[i].y << "\t" << planePoints[i].z << endl;
+	}
+	ofs_plane.close();
+}

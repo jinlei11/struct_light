@@ -21,6 +21,16 @@ std::string ROIPathRight = currentPath + "ROI\\right\\";
 
 std::string ProjectionPattern = currentPath + "ProjectionPattern\\";
 
+
+std::string camParamPath = currentPath + "camera\\out_camera_data.yml";
+std::string PlaneBoardFilename = currentPath + "plane\\boards\\";
+std::string PlaneLineFilename = currentPath + "plane\\lines\\";
+
+std::string PointsPath = currentPath + "plane\\Points.txt";
+std::string PlanePath = currentPath + "plane\\PLANE.txt";
+
+
+
 //格雷码图像数
 int GrayImgsNum = 7;
 //相移图像数
@@ -49,16 +59,29 @@ int main() {
 
 
 	/***********************    相机标定   *********************************/
-	CameraCalibration calibration(Plate_doubleCircle,
-								  Calibration_LeftCamImgsPath, 
-								  Calibration_RightCamImgsPath, 
-								  CalibrationResultPath, 
-								  true);
-	calibration.M_MyCameraCalibrationAndSave();
-
-
+	//CameraCalibration calibration(Plate_doubleCircle,
+	//							  Calibration_LeftCamImgsPath, 
+	//							  Calibration_RightCamImgsPath, 
+	//							  CalibrationResultPath, 
+	//							  true);
+	//calibration.M_MyCameraCalibrationAndSave();
 
 	/***********************    相机标定   *********************************/
+
+	OptPlaneCalibration(PlaneBoardFilename, PlaneLineFilename, camParamPath, PointsPath, PlanePath, Plate_chess811);
+
+
+
+	/***********************    光平面标定   *********************************/
+
+
+
+
+
+	/***********************    光平面标定   *********************************/
+
+
+
 
 
 	/***********************    图像预处理   *********************************/
