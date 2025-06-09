@@ -66,7 +66,13 @@ void CameraCalibration::ProcessImagePointsCircle(const std::vector<cv::Mat>& img
 		std::vector<cv::Point2f> points;
 		bool found = cv::findCirclesGrid(img, boardSize, points, cv::CALIB_CB_SYMMETRIC_GRID, blob);
 		if (showCorners) {
-			cv::Mat imgCopy = img.clone();
+			cv::Mat imgCopy;
+			if (img.channels() == 1) {
+				cv::cvtColor(img, imgCopy, cv::COLOR_GRAY2BGR);  // 将灰度图转为彩色图
+			}
+			else {
+				imgCopy = img.clone();
+			}
 			cv::drawChessboardCorners(imgCopy, boardSize, points, found);
 			cv::namedWindow("corner", cv::WINDOW_NORMAL);
 			cv::imshow("corner", imgCopy);
@@ -88,7 +94,13 @@ void CameraCalibration::ProcessImagePointsCircleInvert(const std::vector<cv::Mat
 		std::vector<cv::Point2f> points;
 		bool found = cv::findCirclesGrid(~img, boardSize, points, cv::CALIB_CB_SYMMETRIC_GRID, blob);
 		if (showCorners) {
-			cv::Mat imgCopy = img.clone();
+			cv::Mat imgCopy;
+			if (img.channels() == 1) {
+				cv::cvtColor(img, imgCopy, cv::COLOR_GRAY2BGR);  // 将灰度图转为彩色图
+			}
+			else {
+				imgCopy = img.clone();
+			}
 			cv::drawChessboardCorners(imgCopy, boardSize, points, found);
 			cv::namedWindow("corner", cv::WINDOW_NORMAL);
 			cv::imshow("corner", imgCopy);
@@ -139,7 +151,13 @@ void CameraCalibration::ProcessImagePointsChess(const std::vector<cv::Mat>& imgs
 		std::vector<cv::Point2f> points;
 		bool found = cv::findChessboardCornersSB(img, boardSize, points);
 		if (showCorners) {
-			cv::Mat imgCopy = img.clone();
+			cv::Mat imgCopy;
+			if (img.channels() == 1) {
+				cv::cvtColor(img, imgCopy, cv::COLOR_GRAY2BGR);  // 将灰度图转为彩色图
+			}
+			else {
+				imgCopy = img.clone();
+			}
 			cv::drawChessboardCorners(imgCopy, boardSize, points, found);
 			cv::namedWindow("corner", cv::WINDOW_NORMAL);
 			cv::imshow("corner", imgCopy);
@@ -488,26 +506,36 @@ void CameraCalibration::StereoRectificationAndRemap() {
 		// 拼接显示
 		cv::Mat result;
 		hconcat(imgL_rect, imgR_rect, result);
+		std::cout << result.rows<< std::endl;
 		DrawEpipolarLines(result);
-		ShowAndSaveResult(result, i);
 
-		// 评估极线误差
-		EpipolarErrorStats stats = evaluateEpipolarError(imgL_rect, imgR_rect);
-		std::cout << "Image Pair " << i << " - Matches: " << stats.num_matches
-			<< ", Mean: " << stats.mean_error
-			<< ", StdDev: " << stats.std_error
-			<< ", Max: " << stats.max_error << std::endl;
+		//// 评估极线误差
+		//EpipolarErrorStats stats = evaluateEpipolarError(imgL_rect, imgR_rect);
+		//std::cout << "Image Pair " << i << " - Matches: " << stats.num_matches
+		//	<< ", Mean: " << stats.mean_error
+		//	<< ", StdDev: " << stats.std_error
+		//	<< ", Max: " << stats.max_error << std::endl;
 	}
 }
 
 
 void CameraCalibration::DrawEpipolarLines(cv::Mat& img) {
-	int step = img.rows / 20;
-	for (int y = step; y < img.rows; y += step) {
-		cv::line(img, { 0, y }, { img.cols, y }, { 0, 255, 0 }, 1);
+	if (img.channels() == 1) {
+		cv::cvtColor(img, img, cv::COLOR_GRAY2BGR);
 	}
-	cv::line(img, { 0, img.rows / 2 }, { img.cols, img.rows / 2 }, { 0, 0, 255 }, 2);
+	int h = img.rows;
+	int step = h / 20;
+	std::cout << "step: " << step << std::endl;
+	for (int y = step; y < h; y += step) {
+		cv::line(img, { 0, y }, { img.cols, y }, { 0, 255, 0 }, 3); // 整体图画线
+	}
+
+	cv::namedWindow("Stereo Rectification Result", cv::WINDOW_NORMAL);
+	cv::imshow("Stereo Rectification Result", img);
+	char key = cv::waitKey(0);
 }
+
+
 
 void CameraCalibration::ShowAndSaveResult(const cv::Mat& result, int index) {
 	cv::namedWindow("Stereo Rectification Result", cv::WINDOW_NORMAL);

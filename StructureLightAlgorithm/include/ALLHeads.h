@@ -12,3 +12,4 @@
 #include "ImagepreProcessing.h"
 #include "ImageReprocess.h"
 #include "PhaseErrorAnalyze.h"
+#include "LaserLineplane.h"

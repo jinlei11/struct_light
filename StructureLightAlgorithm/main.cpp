@@ -50,11 +50,14 @@ int main() {
 
 	/***********************    相机标定   *********************************/
 	CameraCalibration calibration(Plate_doubleCircle,
-									Calibration_LeftCamImgsPath, 
-									Calibration_RightCamImgsPath, 
-									CalibrationResultPath, 
-									true);
+								  Calibration_LeftCamImgsPath, 
+								  Calibration_RightCamImgsPath, 
+								  CalibrationResultPath, 
+								  true);
 	calibration.M_MyCameraCalibrationAndSave();
+
+
+
 	/***********************    相机标定   *********************************/
 
 

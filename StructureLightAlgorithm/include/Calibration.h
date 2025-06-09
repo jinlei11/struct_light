@@ -246,9 +246,9 @@ private:
 
 	void StereoRectificationAndRemap();
 
-	void CameraCalibration::DrawEpipolarLines(cv::Mat& img);
+	void DrawEpipolarLines(cv::Mat& img);
 
-	void CameraCalibration::ShowAndSaveResult(const cv::Mat& result, int index);
+	void ShowAndSaveResult(const cv::Mat& result, int index);
 
 
 
