@@ -21,7 +21,7 @@ std::string ROIPathRight = currentPath + "ROI\\right\\";
 
 std::string ProjectionPattern = currentPath + "ProjectionPattern\\";
 
-
+//光平面标定
 std::string camParamPath = currentPath + "camera\\out_camera_data.yml";
 std::string PlaneBoardFilename = currentPath + "plane\\boards\\";
 std::string PlaneLineFilename = currentPath + "plane\\lines\\";
@@ -68,20 +68,12 @@ int main() {
 
 	/***********************    相机标定   *********************************/
 
-	OptPlaneCalibration(PlaneBoardFilename, PlaneLineFilename, camParamPath, PointsPath, PlanePath, Plate_chess811);
-
-
 
 	/***********************    光平面标定   *********************************/
-
-
-
-
+	OptPlaneCalibration(PlaneBoardFilename, PlaneLineFilename, 
+						camParamPath, PointsPath, PlanePath, Plate_chess811);
 
 	/***********************    光平面标定   *********************************/
-
-
-
 
 
 	/***********************    图像预处理   *********************************/
@@ -99,9 +91,6 @@ int main() {
 	//	processor_right.saveResult(ROIPathRight + "ROI.bmp");
 	//}
 	/***********************    图像预处理   *********************************/
-
-
-
 
 
 	/***********************    三维重建   *********************************/	 
@@ -142,7 +131,6 @@ int main() {
 	//cv::Mat DepthMap = Generate3DPoints.CalculateDepthMap(Disparity, Q, -10000, 20000, -2000, 1000);
 	//Generate3DPoints.SaveCloudPointsToTxt(DepthMap, Q, CloudPointsSavedPath);
 
-
 	/***********************    三维重建   *********************************/
 
 
@@ -153,7 +141,6 @@ int main() {
 
 	//cv::Mat image = cv::imread(CamResponseCurveImgsPath + "10.bmp");
 	//test.CalculateIrradianceImage(image, 0.30f, 1.0f);
-
 
 	/***********************    三维重建:基于相机响应曲线   *********************************/
 

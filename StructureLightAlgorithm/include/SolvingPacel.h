@@ -27,6 +27,19 @@ enum CameraPosition {
 };
 
 
+
+enum SolveMethod {
+
+	DPWC = 0,    //多频外差法
+	HBGLM = 1,   //互补格雷码
+
+
+};
+
+
+
+
+
 /*
  * @ brief  自适应阈值计算方法枚举
  * @ OTSU                Otsu自适应阈值，基于类间方差最大化
